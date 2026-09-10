@@ -83,15 +83,19 @@ def fred_series(series_id: str, start: str = "2015-01-01") -> pd.Series:
 
 
 @st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
-def fred_release_dates(release_id: int):
+def fred_release_dates(release_id: int, start: str = "2015-01-01"):
+    """某个 FRED release(CPI=10、非农=50)的发布日期:历史的 + 未来已排期的。
+    注意 FRED 这个接口的两个默认值很坑:不写 realtime_start 只给"今年"的日期;
+    include_release_dates_with_no_data 不设 true 就不给未来排期(所以以前"即将到来"里永远没有 CPI)。"""
     key = fred_key()
     if not key:
         return []
     try:
         r = requests.get(f"{FRED_BASE}/release/dates", timeout=20, params={
             "release_id": release_id, "api_key": key, "file_type": "json",
-            "sort_order": "asc", "include_release_dates_with_no_data": "false",
-            "limit": 1000})
+            "realtime_start": start, "realtime_end": "9999-12-31",
+            "include_release_dates_with_no_data": "true",
+            "sort_order": "asc", "limit": 1000})
         r.raise_for_status()
         return [pd.Timestamp(d["date"]).normalize() for d in r.json().get("release_dates", [])]
     except Exception:
