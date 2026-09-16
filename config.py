@@ -129,6 +129,55 @@ LABOR = {
     "years": 10,              # 主图看多久
 }
 
+# ── 决策台 ───────────────────────────────────────────────────────────────────
+# 四层框架的落地页:① 横向在哪一格 ② 纵向什么会切换 ③ 门槛第几档 ④ 执行什么形式。
+# 设计原则:平时只读,只有「预定复盘日」或「触发清单上的事真的发生了」才解锁改动。
+DESK = {
+    # 预定复盘日(决策只在这些日子发生)
+    "review_dates": ["2026-12-09", "2027-03-17", "2027-06-16", "2027-09-15"],
+
+    # ① 横向:两个轴的判定标准。阈值事先写死,不能事后调来迎合想要的结论。
+    "infl_series":  "PCEPILFE",   # 核心PCE价格指数(月度),用它算3个月年化
+    "infl_months":  3,            # 连续下行几个月才算"降"
+    "growth_series": "IC4WSA",    # 初请失业金4周均值
+    "growth_calm":  220_000,      # 低于 = 强
+    "growth_warn":  260_000,      # 高于并维持一个月 = 弱
+
+    # ③ 门槛:三个条件,有几个就是几档
+    "gates": ["direction", "catalyst", "date"],
+
+    # 想法清单的默认内容(2026/9/16 实操走过一遍的结果)
+    "default_ideas": [
+        {"idea": "黄金 / Gold",                  "direction": True,  "catalyst": False, "date": False},
+        {"idea": "长久期美债 / Long Treasuries", "direction": True,  "catalyst": True,  "date": False},
+        {"idea": "能源 / Energy",                "direction": True,  "catalyst": True,  "date": True},
+        {"idea": "TIPS(基础层)/ TIPS (base)",  "direction": False, "catalyst": False, "date": False},
+    ],
+
+    # 触发清单:清单之外的事,一律等预定复盘日
+    "triggers": [
+        ("11/3 中期选举结果确定",              "Nov 3 midterm result confirmed"),
+        ("霍尔木兹实际关闭(不是威胁)",        "Hormuz actually closed (not threatened)"),
+        ("伊朗冲突出现停火或协议",              "Ceasefire or agreement in the Iran conflict"),
+        ("初请四周均值破260k并维持一个月",      "IC4WSA above 260k, held a month"),
+        ("超大规模企业发债失败或大幅推迟",      "A hyperscaler's debt raise fails or is badly delayed"),
+        ("美联储主席更换或框架公开改变",        "Fed chair replaced, or the framework publicly changes"),
+    ],
+    # 兜底项的三个条件(黑天鹅事先想不到,所以给测试而不是清单)
+    "fallback": [
+        ("已发生的事实,不是预期或威胁",        "An accomplished fact, not an expectation or a threat"),
+        ("我会因此改变四象限的概率分配",        "It changes my probability weights across the quadrants"),
+        ("影响持续超过一个季度",                "The effect lasts more than a quarter"),
+    ],
+    # 明确不触发的(写下什么不算,比写下什么算更能防止自己滥用)
+    "non_triggers": [
+        ("单日价格大幅波动",      "A big one-day price move"),
+        ("某个数据单次意外",      "One surprising data point"),
+        ("官员讲话、市场传闻",    "Official speeches, market rumours"),
+        ("「感觉不对劲」",        "\"Something feels off\""),
+    ],
+}
+
 # ── 事件定义 ─────────────────────────────────────────────────────────────────
 # source: manual=用下面写死的 dates;fred_release=用FRED发布日历;fred_change=FRED中利率变动日
 EVENTS = {
@@ -171,6 +220,7 @@ SENTIMENT = {
 # ── 导航(加页面 = 加一行 + 在 app.py 写个 render 函数)──────────────────────
 # 每行 = (中文名, 英文名, key, 是否启用)
 PAGES = [
+    ("决策台",              "Decision Desk",          "desk",       True),
     ("市场总览",            "Market Overview",        "overview",   True),
     ("利率与曲线",          "Rates & Curve",          "rates",      True),
     ("曲线历史",            "Curve History",          "curve_hist", True),
@@ -259,6 +309,73 @@ TEXT = {
         "ch_trend_flat":   "基本没动",
         "ch_trend_detail": "均线 {now} bps · 一个月前 {then} bps · 变动 {chg} bps",
         "ch_trend_note":   "细的那条是每天的数,抖得看不出方向;粗的那条是 20 日均线,抹掉噪音后才看得出趋势。只看粗线。收窄 = 市场越来越认为政策已经偏紧;走宽 = 市场越来越不这么认为。一周看一次就够,连续四周同方向才算数。",
+        # 决策台
+        "dk_title":        "决策台",
+        "dk_sub":          "四层框架的落地页。上面三块是自动算的,想法清单只有在预定复盘日、或触发清单上的事真的发生时才能改。",
+        "dk_need_key":     "本页需要免费 FRED key(在 Secrets 设 FRED_API_KEY)。",
+        # ① 横向
+        "dk_h_title":      "① 横向 · 现在在哪一格",
+        "dk_axis_infl":    "通胀轴",
+        "dk_axis_growth":  "增长轴",
+        "dk_infl_fall":    "降",
+        "dk_infl_persist": "不降",
+        "dk_growth_hold":  "强",
+        "dk_growth_weak":  "弱",
+        "dk_mid":          "中间地带",
+        "dk_box1":         "① 软着陆",
+        "dk_box2":         "② 过热",
+        "dk_box3":         "③ 过度收紧",
+        "dk_box4":         "④ 滞胀",
+        "dk_box_trans":    "过渡区 · 不判格",
+        "dk_box_now":      "当前:",
+        "dk_my_view":      "我的判断:③ 过度收紧 · 市场定价:② 过热 · 我是少数派",
+        "dk_infl_detail":  "核心PCE 3个月年化 {v}% · 连续下行 {n} 个月(需要 {need} 个月)",
+        "dk_growth_detail": "初请4周均值 {v} · 平静线 {calm} · 裂缝线 {warn}",
+        "dk_trans_note":   "够不到标准就是过渡区,不硬塞进某一格。过渡区里什么都不做,只记录。",
+        # ② 纵向
+        "dk_v_title":      "② 纵向 · 离开这一格还差多少",
+        "dk_v_to3":        "→ ③ 过度收紧",
+        "dk_v_to1":        "→ ① 软着陆",
+        "dk_v_gap_claims": "初请还差 {v} 才到 260k",
+        "dk_v_gap_claims_over": "初请已破 260k,还需维持 {d} 天",
+        "dk_v_gap_infl":   "核心PCE 还需再下行 {n} 个月",
+        "dk_v_next":       "下一个预定复盘日:{date}(还有 {n} 天)",
+        "dk_v_none":       "没有更多预定复盘日,去 config.py 的 DESK[\"review_dates\"] 里加。",
+        # ③ 门槛
+        "dk_g_title":      "③ 门槛 · 每个想法在第几档",
+        "dk_col_idea":     "想法",
+        "dk_col_dir":      "方向",
+        "dk_col_cat":      "催化剂",
+        "dk_col_date":     "日期",
+        "dk_col_rung":     "档位",
+        "dk_col_action":   "动作",
+        "dk_act_0":        "不碰",
+        "dk_act_1":        "不持有(≠做空)",
+        "dk_act_2":        "观察名单 / 极小仓",
+        "dk_act_3":        "可以建仓",
+        "dk_act_base":     "基础层 · 不走阶梯",
+        "dk_locked":       "🔒 已锁定。今天不是预定复盘日,触发清单也没勾。只能看,不能改。",
+        "dk_unlocked":     "🔓 已解锁。可以重新评估档位。改完记得下载 JSON。",
+        "dk_gate_note":    "三个条件有几个就是几档。做空要在第3档之外再加:定价极端 + 明确证伪点 = 第4档。「不足以做多」不等于「足以做空」,中间隔着三档。",
+        "dk_base_note":    "把「基础层」那一行的三个框都留空——它不走这个阶梯,因为实际收益率持有到期就有,不需要猜对方向。",
+        # 触发
+        "dk_t_title":      "触发清单",
+        "dk_t_sub":        "清单之外的事,一律等预定复盘日。",
+        "dk_t_named":      "具名事件",
+        "dk_t_fallback":   "兜底(黑天鹅)",
+        "dk_t_fb_intro":   "同时满足以下三条才算触发:",
+        "dk_t_fb_write":   "使用兜底项前,先写下它怎么改变了四象限的概率分配(写完才能看价格):",
+        "dk_t_fb_ph":      "例如:海峡关闭 → 能源再冲 → 通胀轴上行 → ④ 的概率从10%提到35%,③ 从45%降到30%……",
+        "dk_t_non":        "明确不触发的",
+        "dk_t_non_note":   "写下什么「不」算触发,比写下什么算更能防止自己滥用。",
+        # 存档
+        "dk_save_title":   "存档",
+        "dk_save_note":    "关掉浏览器数据就没了。复盘改完之后下载 JSON,下次复盘再上传。",
+        "dk_download":     "下载 JSON",
+        "dk_upload":       "上传上次的 JSON",
+        "dk_upload_ok":    "已载入。",
+        "dk_upload_fail":  "读不了这个文件,检查是不是本页下载的 JSON。",
+        "dk_reset":        "恢复默认想法清单",
         # 劳动力市场
         "lb_title":        "劳动力市场",
         "lb_sub":          "初请失业金 4 周移动平均。这是行政数据——真的去申请了失业金,没人能拒绝回答,也几乎不修正。每周四 08:30 美东时间发布(加州 05:30),覆盖的是上上周。",
@@ -466,6 +583,73 @@ TEXT = {
         "ch_trend_flat":   "essentially unchanged",
         "ch_trend_detail": "Average {now} bps · a month ago {then} bps · change {chg} bps",
         "ch_trend_note":   "The thin line is the daily spread — too noisy to read a direction from. The thick line is the 20-day average, which is where the trend shows. Read only the thick line. Narrowing means the market increasingly thinks policy is tight; widening means the opposite. Once a week is enough, and four weeks in the same direction is what counts.",
+        # Decision desk
+        "dk_title":        "Decision Desk",
+        "dk_sub":          "Where the four-layer framework lands. The top three blocks compute themselves; the idea list can only be edited on a scheduled review date, or when something on the trigger list has actually happened.",
+        "dk_need_key":     "This page needs a free FRED key (set FRED_API_KEY in Secrets).",
+        # Layer 1
+        "dk_h_title":      "① Horizontal · which box are we in",
+        "dk_axis_infl":    "Inflation axis",
+        "dk_axis_growth":  "Growth axis",
+        "dk_infl_fall":    "falling",
+        "dk_infl_persist": "persisting",
+        "dk_growth_hold":  "holding",
+        "dk_growth_weak":  "weakening",
+        "dk_mid":          "middle ground",
+        "dk_box1":         "① Soft landing",
+        "dk_box2":         "② Overheat",
+        "dk_box3":         "③ Over-tightening",
+        "dk_box4":         "④ Stagflation",
+        "dk_box_trans":    "Transition · no box call",
+        "dk_box_now":      "Now: ",
+        "dk_my_view":      "My view: ③ over-tightening · market pricing: ② overheat · I am in the minority",
+        "dk_infl_detail":  "Core PCE 3m annualized {v}% · falling for {n} months (needs {need})",
+        "dk_growth_detail": "Claims 4-week average {v} · calm line {calm} · crack line {warn}",
+        "dk_trans_note":   "If it does not clear the threshold it is transition, not a box. In transition you record and do nothing.",
+        # Layer 2
+        "dk_v_title":      "② Vertical · how far from leaving this box",
+        "dk_v_to3":        "→ ③ over-tightening",
+        "dk_v_to1":        "→ ① soft landing",
+        "dk_v_gap_claims": "Claims are {v} below 260k",
+        "dk_v_gap_claims_over": "Claims are above 260k; {d} more days to hold",
+        "dk_v_gap_infl":   "Core PCE needs {n} more months of falling",
+        "dk_v_next":       "Next scheduled review: {date} ({n} days away)",
+        "dk_v_none":       "No scheduled reviews left — add more in DESK[\"review_dates\"] in config.py.",
+        # Layer 3
+        "dk_g_title":      "③ Threshold · what rung is each idea",
+        "dk_col_idea":     "Idea",
+        "dk_col_dir":      "Direction",
+        "dk_col_cat":      "Catalyst",
+        "dk_col_date":     "Date",
+        "dk_col_rung":     "Rung",
+        "dk_col_action":   "Action",
+        "dk_act_0":        "Nothing",
+        "dk_act_1":        "Don't own it (≠ short)",
+        "dk_act_2":        "Watchlist / tiny",
+        "dk_act_3":        "Position allowed",
+        "dk_act_base":     "Base bucket · no ladder",
+        "dk_locked":       "🔒 Locked. Today is not a scheduled review date and no trigger is ticked. Read-only.",
+        "dk_unlocked":     "🔓 Unlocked. Rungs can be reassessed. Download the JSON when you are done.",
+        "dk_gate_note":    "The rung is however many of the three you have. A short needs everything at rung 3 plus extreme pricing and a clear falsifier — rung 4. \"Not enough to go long\" is not \"enough to go short\"; three rungs separate them.",
+        "dk_base_note":    "Leave all three boxes empty on the base-bucket row — it does not use this ladder, because a real yield held to maturity is yours without calling the direction.",
+        # Triggers
+        "dk_t_title":      "Trigger list",
+        "dk_t_sub":        "Anything not on this list waits for a scheduled review date.",
+        "dk_t_named":      "Named events",
+        "dk_t_fallback":   "Fallback (black swan)",
+        "dk_t_fb_intro":   "All three must hold for this to count:",
+        "dk_t_fb_write":   "Before using the fallback, write down how it changes the probability weights across the quadrants (finish writing before looking at prices):",
+        "dk_t_fb_ph":      "e.g. strait closed → energy spikes again → inflation axis up → ④ goes from 10% to 35%, ③ from 45% to 30% ...",
+        "dk_t_non":        "Explicitly not triggers",
+        "dk_t_non_note":   "Writing down what does NOT count guards against misuse better than writing down what does.",
+        # Saving
+        "dk_save_title":   "Saving",
+        "dk_save_note":    "Close the browser and this is gone. Download the JSON after a review and upload it at the next one.",
+        "dk_download":     "Download JSON",
+        "dk_upload":       "Upload last saved JSON",
+        "dk_upload_ok":    "Loaded.",
+        "dk_upload_fail":  "Could not read that file — check it is a JSON downloaded from this page.",
+        "dk_reset":        "Reset to default ideas",
         # Labor market
         "lb_title":        "Labor Market",
         "lb_sub":          "Initial jobless claims, 4-week average. This is administrative data — people actually filing for benefits, so nobody can decline to answer and it is barely revised. Released Thursdays at 8:30 AM Eastern (5:30 AM in California), covering the week before last.",

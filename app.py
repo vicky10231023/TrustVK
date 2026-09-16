@@ -6,6 +6,8 @@ app.py —— 全球宏观作战室(Phase 1)· 中 / 英双语
       所有界面文字都在 config.py 的 TEXT 里,资产/事件/页面名在各自的 name_en / label_en / PAGES 里。
 """
 import datetime as dt
+import json
+
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
@@ -138,6 +140,244 @@ def resolve_event_dates(key):
     if src == "fred_change":
         return E.rate_change_dates(core.fred_series(ev["series"]))
     return []
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# 页面:决策台
+# 四层框架的落地页。设计意图:平时只读 —— 决策只在预定复盘日,或触发清单上的事
+# 真的发生时才做。这道闸门挡的不是判断,是「有看法就想下注」那个冲动。
+# ════════════════════════════════════════════════════════════════════════════
+def _desk_infl():
+    """通胀轴:核心PCE 3个月年化,看连续下行了几个月。返回 (最新值%, 连降月数)。"""
+    idx = core.fred_series(C.DESK["infl_series"]).dropna()
+    if len(idx) < 8:
+        return None, 0
+    ann = ((idx / idx.shift(3)) ** 4 - 1) * 100      # 3个月年化
+    ann = ann.dropna()
+    if ann.empty:
+        return None, 0
+    n = 0
+    for i in range(len(ann) - 1, 0, -1):
+        if ann.iloc[i] < ann.iloc[i - 1]:
+            n += 1
+        else:
+            break
+    return float(ann.iloc[-1]), n
+
+
+def _desk_growth(key):
+    """增长轴:初请4周均值。返回 (最新值, 已在260k上方的天数)。"""
+    s = yc_fetch(C.DESK["growth_series"], key, start="2000-01-01").dropna()
+    if s.empty:
+        return None, 0
+    warn = C.DESK["growth_warn"]
+    last = float(s.iloc[-1])
+    days = 0
+    if last >= warn:
+        below = s[s < warn]
+        if len(below):
+            days = (s.index[-1] - below.index[-1]).days
+        else:
+            days = (s.index[-1] - s.index[0]).days
+    return last, days
+
+
+def _desk_rung(row):
+    """三个条件有几个就是几档;三个全空 = 基础层,不走阶梯。"""
+    n = int(bool(row.get("direction"))) + int(bool(row.get("catalyst"))) + int(bool(row.get("date")))
+    if n == 0:
+        return None
+    return n
+
+
+def page_desk():
+    st.markdown('<div class="eyebrow">DECISION DESK</div>', unsafe_allow_html=True)
+    st.markdown(f"## {t('dk_title')}")
+    key = core.fred_key()
+    if not key:
+        st.markdown(f'<div class="note">{t("dk_need_key")}</div>', unsafe_allow_html=True)
+        return
+    st.caption(t("dk_sub"))
+
+    D = C.DESK
+    today = dt.date.today()
+
+    # ══ ① 横向 ══
+    st.markdown(f"### {t('dk_h_title')}")
+    infl_v, infl_n = _desk_infl()
+    gro_v, gro_days = _desk_growth(key)
+
+    # 通胀轴判定
+    if infl_v is None:
+        infl_state, infl_col = t("dk_mid"), T["muted"]
+    elif infl_n >= D["infl_months"]:
+        infl_state, infl_col = t("dk_infl_fall"), T["up"]
+    else:
+        infl_state, infl_col = t("dk_infl_persist"), T["down"]
+
+    # 增长轴判定:破 260k 且维持一个月才算"弱"
+    if gro_v is None:
+        gro_state, gro_col = t("dk_mid"), T["muted"]
+    elif gro_v >= D["growth_warn"] and gro_days >= 30:
+        gro_state, gro_col = t("dk_growth_weak"), T["down"]
+    elif gro_v < D["growth_calm"]:
+        gro_state, gro_col = t("dk_growth_hold"), T["up"]
+    else:
+        gro_state, gro_col = t("dk_mid"), T["gold"]
+
+    core.cards_row([
+        (t("dk_axis_infl"), f"{infl_v:.1f}%" if infl_v is not None else "—", infl_state, infl_col),
+        (t("dk_axis_growth"), f"{gro_v:,.0f}" if gro_v is not None else "—", gro_state, gro_col),
+    ])
+    if infl_v is not None:
+        st.caption(t("dk_infl_detail", v=f"{infl_v:.1f}", n=infl_n, need=D["infl_months"]))
+    if gro_v is not None:
+        st.caption(t("dk_growth_detail", v=f"{gro_v:,.0f}",
+                     calm=f"{D['growth_calm']:,}", warn=f"{D['growth_warn']:,}"))
+
+    # 格子:任一轴在中间地带 → 过渡区,不硬判
+    mid = t("dk_mid")
+    if infl_state == mid or gro_state == mid:
+        box, box_col = t("dk_box_trans"), T["muted"]
+    elif infl_state == t("dk_infl_fall") and gro_state == t("dk_growth_hold"):
+        box, box_col = t("dk_box1"), T["up"]
+    elif infl_state == t("dk_infl_persist") and gro_state == t("dk_growth_hold"):
+        box, box_col = t("dk_box2"), T["gold"]
+    elif infl_state == t("dk_infl_fall") and gro_state == t("dk_growth_weak"):
+        box, box_col = t("dk_box3"), T["accent"]
+    else:
+        box, box_col = t("dk_box4"), T["down"]
+
+    st.markdown(f'{t("dk_box_now")}<span class="pill" style="background:{box_col};'
+                f'color:#0a0d17">{box}</span>', unsafe_allow_html=True)
+    st.markdown(f'<div class="note" style="margin-top:8px">{t("dk_my_view")}</div>',
+                unsafe_allow_html=True)
+    if box == t("dk_box_trans"):
+        st.markdown(f'<div class="note">{t("dk_trans_note")}</div>', unsafe_allow_html=True)
+
+    st.divider()
+
+    # ══ ② 纵向 ══
+    st.markdown(f"### {t('dk_v_title')}")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(f"**{t('dk_v_to3')}**")
+        if gro_v is not None:
+            if gro_v < D["growth_warn"]:
+                st.caption(t("dk_v_gap_claims", v=f"{D['growth_warn'] - gro_v:,.0f}"))
+            else:
+                st.caption(t("dk_v_gap_claims_over", d=max(0, 30 - gro_days)))
+    with c2:
+        st.markdown(f"**{t('dk_v_to1')}**")
+        st.caption(t("dk_v_gap_infl", n=max(0, D["infl_months"] - infl_n)))
+
+    future = [dt.date.fromisoformat(d) for d in D["review_dates"]
+              if dt.date.fromisoformat(d) >= today]
+    next_rev = min(future) if future else None
+    if next_rev:
+        st.info(t("dk_v_next", date=next_rev, n=(next_rev - today).days))
+    else:
+        st.warning(t("dk_v_none"))
+
+    st.divider()
+
+    # ══ 触发清单 ══
+    st.markdown(f"### {t('dk_t_title')}")
+    st.caption(t("dk_t_sub"))
+
+    fired = False
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(f"**{t('dk_t_named')}**")
+        for i, (zh, en) in enumerate(D["triggers"]):
+            if st.checkbox(en if lang() == "en" else zh, key=f"dk_trig_{i}"):
+                fired = True
+    with c2:
+        st.markdown(f"**{t('dk_t_fallback')}**")
+        st.caption(t("dk_t_fb_intro"))
+        fb = []
+        for i, (zh, en) in enumerate(D["fallback"]):
+            fb.append(st.checkbox(en if lang() == "en" else zh, key=f"dk_fb_{i}"))
+        if all(fb):
+            st.caption(t("dk_t_fb_write"))
+            why = st.text_area("fallback_why", key="dk_fb_why", height=110,
+                               placeholder=t("dk_t_fb_ph"), label_visibility="collapsed")
+            # 先写判断,再看价格 —— 顺序反过来写的就是对价格的合理化
+            if len((why or "").strip()) >= 40:
+                fired = True
+
+    with st.expander(t("dk_t_non")):
+        for zh, en in D["non_triggers"]:
+            st.markdown(f"✗ {en if lang() == 'en' else zh}")
+        st.caption(t("dk_t_non_note"))
+
+    st.divider()
+
+    # ══ ③ 门槛 ══
+    st.markdown(f"### {t('dk_g_title')}")
+    unlocked = fired or (today.isoformat() in D["review_dates"])
+
+    if "dk_ideas" not in st.session_state:
+        st.session_state["dk_ideas"] = [dict(x) for x in D["default_ideas"]]
+
+    up = st.file_uploader(t("dk_upload"), type="json", key="dk_up")
+    if up is not None:
+        try:
+            loaded = json.loads(up.getvalue().decode("utf-8"))
+            st.session_state["dk_ideas"] = loaded["ideas"]
+            st.success(t("dk_upload_ok"))
+        except Exception:
+            st.error(t("dk_upload_fail"))
+
+    df = pd.DataFrame(st.session_state["dk_ideas"])
+    edited = st.data_editor(
+        df, num_rows="dynamic" if unlocked else "fixed",
+        disabled=not unlocked, hide_index=True, use_container_width=True,
+        column_config={
+            "idea": st.column_config.TextColumn(t("dk_col_idea"), width="large"),
+            "direction": st.column_config.CheckboxColumn(t("dk_col_dir")),
+            "catalyst": st.column_config.CheckboxColumn(t("dk_col_cat")),
+            "date": st.column_config.CheckboxColumn(t("dk_col_date")),
+        }, key="dk_editor")
+    if unlocked:
+        st.session_state["dk_ideas"] = edited.fillna(False).to_dict("records")
+
+    st.markdown(t("dk_unlocked") if unlocked else t("dk_locked"))
+
+    # 档位 → 动作
+    ACT = {None: ("dk_act_base", T["accent"]), 1: ("dk_act_1", T["muted"]),
+           2: ("dk_act_2", T["gold"]), 3: ("dk_act_3", T["up"])}
+    rows = []
+    for r in edited.fillna(False).to_dict("records"):
+        rung = _desk_rung(r)
+        akey, _ = ACT.get(rung, ("dk_act_0", T["muted"]))
+        rows.append({
+            t("dk_col_idea"): r.get("idea", ""),
+            t("dk_col_rung"): t("dk_act_base").split("·")[0].strip() if rung is None else f"{rung}",
+            t("dk_col_action"): t(akey),
+        })
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+    st.markdown(f'<div class="note">{t("dk_gate_note")}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="note" style="margin-top:8px">{t("dk_base_note")}</div>',
+                unsafe_allow_html=True)
+
+    st.divider()
+
+    # ══ 存档 ══
+    st.markdown(f"### {t('dk_save_title')}")
+    st.caption(t("dk_save_note"))
+    blob = json.dumps({"saved": today.isoformat(), "box": box,
+                       "ideas": st.session_state["dk_ideas"]},
+                      ensure_ascii=False, indent=2)
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        st.download_button(t("dk_download"), blob.encode("utf-8"),
+                           file_name=f"decision_desk_{today:%Y%m%d}.json",
+                           mime="application/json")
+    with c2:
+        if st.button(t("dk_reset")):
+            st.session_state["dk_ideas"] = [dict(x) for x in D["default_ideas"]]
+            st.rerun()
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -968,6 +1208,7 @@ def page_placeholder(title, desc):
 
 
 PAGE_FUNCS = {
+    "desk": page_desk,
     "overview": page_overview, "rates": page_rates, "curve_hist": page_curve_history,
     "labor": page_labor, "ust": page_ust, "sentiment": page_sentiment,
     "events": page_events, "cpi": page_cpi,
