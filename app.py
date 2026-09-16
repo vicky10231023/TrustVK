@@ -13,6 +13,7 @@ import plotly.graph_objects as go
 import config as C
 import core
 import events as E
+from yield_curve import render_yield_curve
 
 st.set_page_config(page_title="宏观作战室 · Macro War Room", page_icon="🧭", layout="wide")
 core.inject_css()
