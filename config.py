@@ -74,7 +74,10 @@ UST = {
     "breakeven_10y":   "T10YIE",      # 10年盈亏平衡通胀
     "breakeven_5y5y":  "T5YIFR",      # 5年后的5年远期盈亏平衡(看长期通胀中枢有没有脱锚)
     # 第一层 · 第二刀:名义 = 预期短端路径 + 期限溢价
-    "term_premium_10y": "THREEFYTP10",  # Kim-Wright 10年期限溢价(模型估计值,会回溯修正)
+    # 注意口径:期限溢价是针对"零息债"算的,所以要配同一个模型的零息拟合收益率来减,
+    # 不能拿 DGS10(附息、半年付息、投资基准报价)去减,那样 A 会带一个系统性偏差。
+    "fitted_zero_10y":  "THREEFY10",    # Kim-Wright 10年零息拟合收益率
+    "term_premium_10y": "THREEFYTP10",  # 同一模型的期限溢价(估计值,会回溯修正)
     # 第二层 · 曲线
     "nominal_2y":      "DGS2",
     "nominal_3m":      "DGS3MO",
@@ -245,8 +248,9 @@ TEXT = {
         "ust_read_real":    "**实际利率主导** —— 名义变动主要来自实际利率,不是通胀预期。但要分清是 A(政策路径)还是 B(期限溢价),得看第二刀。",
         "ust_read_mix":     "没有单一通道主导(最大贡献占比不足 {pct}%)。这一段是混合驱动,别急着讲故事。",
         "ust_read_flat":    "{win}内 10Y 基本没动({bp} bps),没有值得归因的变动。",
-        "ust_tp_lag":       "两刀的名义变动不完全相等:期限溢价序列发布有滞后,对齐后窗口末端不是同一天。差几个 bps 属正常。",
-        "ust_tp_missing":   "期限溢价序列暂时取不到,第二刀跳过(Kim-Wright 发布本身有滞后)。",
+        "ust_bar_zero":     "零息拟合收益率变动",
+        "ust_tp_lag":       "两刀的口径不同,数字对不上是正常的:第一刀用 DGS10(附息、固定期限),第二刀用 Kim-Wright 的零息拟合收益率——因为期限溢价是针对零息债算的,必须配同口径的收益率来减。加上期限溢价发布有滞后,两边窗口末端也差几天。",
+        "ust_tp_missing":   "期限溢价或零息拟合收益率暂时取不到,第二刀跳过(Kim-Wright 发布本身有滞后)。",
         "ust_verify":       "交叉验证:如果归因指向期限溢价,那么下面的拍卖数据里应该能看到一级交易商承接率上升、需求转弱。看不到,说明这个故事讲错了。",
         # 第二层
         "ust_regime_title": "第二层 · 曲线形态",
@@ -399,8 +403,9 @@ TEXT = {
         "ust_read_real":    "**Real yields dominate** — the nominal move came from real yields, not inflation expectations. Separating Channel A (policy path) from Channel B (term premium) takes cut two.",
         "ust_read_mix":     "No single channel dominates (the largest contribution is under {pct}%). This stretch is mixed — don't reach for a story yet.",
         "ust_read_flat":    "The 10Y barely moved over the past {win} ({bp} bps) — nothing worth attributing.",
-        "ust_tp_lag":       "The two cuts show slightly different nominal moves: the term premium series is published with a lag, so after aligning, the windows don't end on the same day. A few bps of difference is normal.",
-        "ust_tp_missing":   "Term premium series unavailable right now, so cut two is skipped (Kim-Wright is published with a lag).",
+        "ust_bar_zero":     "Fitted zero-coupon move",
+        "ust_tp_lag":       "The two cuts use different conventions, so the numbers won't match: cut one uses DGS10 (coupon-bearing, constant maturity), cut two uses the Kim-Wright fitted zero-coupon yield — the term premium is computed on a zero-coupon bond, so it has to be subtracted from a yield on the same basis. The term premium is also published with a lag, so the windows end a few days apart.",
+        "ust_tp_missing":   "Term premium or fitted zero-coupon yield unavailable right now, so cut two is skipped (Kim-Wright is published with a lag).",
         "ust_verify":       "Cross-check: if the attribution points to term premium, the auction data below should show primary dealer takedown rising. If it doesn't, the story is wrong.",
         # Layer 2
         "ust_regime_title": "Layer 2 · Curve Regime",

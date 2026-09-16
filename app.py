@@ -337,6 +337,7 @@ def page_ust():
     s_be = core.fred_series(U["breakeven_10y"])
     s_5y5y = core.fred_series(U["breakeven_5y5y"])
     s_tp = core.fred_series(U["term_premium_10y"])
+    s_zero = core.fred_series(U["fitted_zero_10y"])
     s_2y = core.fred_series(U["nominal_2y"])
     s_3m = core.fred_series(U["nominal_3m"])
     s_2s10s = core.fred_series(U["spread_2s10s"])
@@ -374,7 +375,8 @@ def page_ust():
     st.markdown(f"### {t('ust_decomp_title')}")
     d_nom = _chg_bp(s_nom, w)
     cut1 = _aligned_chg({"nom": s_nom, "real": s_real, "be": s_be}, w)
-    cut2 = _aligned_chg({"nom": s_nom, "tp": s_tp}, w)
+    # 第二刀必须用同口径的零息收益率减期限溢价,不能用 DGS10(附息)——见 config 里的注释
+    cut2 = _aligned_chg({"zero": s_zero, "tp": s_tp}, w)
 
     if d_nom is None or cut1 is None:
         st.markdown(f'<div class="note">{t("fetch_fail", names="FRED")}</div>', unsafe_allow_html=True)
@@ -393,12 +395,11 @@ def page_ust():
                 st.markdown(f'<div class="note">{t("ust_tp_missing")}</div>', unsafe_allow_html=True)
             else:
                 _contrib_bar([
-                    (t("ust_bar_nominal"), cut2["nom"], T["muted"]),
-                    (t("ust_bar_path"), cut2["nom"] - cut2["tp"], T["down"]),
+                    (t("ust_bar_zero"), cut2["zero"], T["muted"]),
+                    (t("ust_bar_path"), cut2["zero"] - cut2["tp"], T["down"]),
                     (t("ust_bar_tp"), cut2["tp"], T["up"]),
                 ], t("ust_cut2"), asof=(cut2["_start"], cut2["_end"]))
-                if cut2["_end"] != cut1["_end"]:
-                    st.caption(t("ust_tp_lag"))
+                st.caption(t("ust_tp_lag"))
 
         # 一句话解读:哪个通道主导
         thr = C.UST_DOMINANT_SHARE
@@ -412,7 +413,7 @@ def page_ust():
             elif cut2 is None:
                 read = t("ust_read_real")
             else:
-                tp, path = cut2["tp"], cut2["nom"] - cut2["tp"]
+                tp, path = cut2["tp"], cut2["zero"] - cut2["tp"]
                 denom2 = abs(tp) + abs(path) or 1.0
                 if abs(tp) / denom2 > thr:
                     read = t("ust_read_b")
