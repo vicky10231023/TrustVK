@@ -102,6 +102,82 @@ def fred_release_dates(release_id: int, start: str = "2015-01-01"):
         return []
 
 
+# ── TreasuryDirect 拍卖 ──────────────────────────────────────────────────────
+def _f(x):
+    """能转成 float 就转,不能就返回 None(TreasuryDirect 的字段经常是空字符串)。"""
+    try:
+        v = float(str(x).strip().replace(",", "").replace("%", ""))
+        return v
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+@st.cache_data(ttl=60 * 60 * 6, show_spinner=False)
+def fetch_auctions(days_back: int = 500) -> pd.DataFrame:
+    """TreasuryDirect 公开接口的历史拍卖结果(不需要 key)。
+    返回列:date / term / type / high_yield / btc / dealer_pct / indirect_pct / direct_pct
+    任何一步失败都返回空 DataFrame,不抛异常——和这个文件里其他 fetch 一样的约定。"""
+    end = dt.date.today()
+    start = end - dt.timedelta(days=days_back)
+    rows = []
+    for sec_type in C.AUCTION_TYPES:
+        try:
+            r = requests.get(C.AUCTION_API, timeout=25, params={
+                "format": "json", "type": sec_type,
+                "dateFieldName": "auctionDate",
+                "startDate": start.isoformat(), "endDate": end.isoformat(),
+                "pagesize": 500, "pagenum": 0})
+            r.raise_for_status()
+            data = r.json()
+        except Exception:
+            continue
+        if not isinstance(data, list):
+            continue
+        for d in data:
+            if not isinstance(d, dict):
+                continue
+            try:
+                date = pd.Timestamp(d.get("auctionDate")).normalize()
+            except Exception:
+                continue
+            if pd.isna(date):
+                continue
+            total = _f(d.get("totalAccepted"))
+            dealer = _f(d.get("primaryDealerAccepted"))
+            indirect = _f(d.get("indirectBidderAccepted"))
+            direct = _f(d.get("directBidderAccepted"))
+            pct = lambda x: (x / total * 100) if (x is not None and total) else None
+            rows.append({
+                "date": date,
+                "term": (d.get("securityTerm") or "").strip(),
+                "type": (d.get("securityType") or sec_type).strip(),
+                "high_yield": _f(d.get("highYield")) or _f(d.get("highDiscountRate")),
+                "btc": _f(d.get("bidToCoverRatio")),
+                "dealer_pct": pct(dealer),
+                "indirect_pct": pct(indirect),
+                "direct_pct": pct(direct),
+            })
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows).dropna(subset=["date"])
+    df = df.sort_values("date").drop_duplicates(subset=["date", "term", "type"], keep="last")
+    return df.reset_index(drop=True)
+
+
+def btc_vs_baseline(df: pd.DataFrame, n: int = 6) -> pd.DataFrame:
+    """给每场拍卖加一列:投标倍数相对同期限前 n 次均值的差。
+    绝对值不可比,只有和自己的同期限历史比才有意义。"""
+    if df.empty or "btc" not in df:
+        return df
+    out = df.copy()
+    out["btc_diff"] = None
+    for term, grp in out.groupby("term"):
+        g = grp.sort_values("date")
+        base = g["btc"].shift(1).rolling(n, min_periods=3).mean()
+        out.loc[g.index, "btc_diff"] = g["btc"] - base
+    return out
+
+
 # ── 工具 ─────────────────────────────────────────────────────────────────────
 def last_and_change(s: pd.Series):
     """最新值 + 日变动(绝对、百分比)。"""

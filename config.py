@@ -43,6 +43,44 @@ TREASURY = {
 }
 REAL_YIELD_10Y = "DFII10"  # 10年期实际收益率(TIPS)——黄金头号变量,单列
 
+# ── 美债实验室(新增页面 "ust")─────────────────────────────────────────────
+# 对应《美债研究手册》五层框架的前四层。想换序列只改这里,app.py 不用动。
+UST = {
+    # 第一层 · 第一刀:名义 = 实际 + 通胀补偿
+    "nominal_10y":     "DGS10",       # 10年名义
+    "real_10y":        "DFII10",      # 10年实际(TIPS)
+    "breakeven_10y":   "T10YIE",      # 10年盈亏平衡通胀
+    "breakeven_5y5y":  "T5YIFR",      # 5年后的5年远期盈亏平衡(看长期通胀中枢有没有脱锚)
+    # 第一层 · 第二刀:名义 = 预期短端路径 + 期限溢价
+    "term_premium_10y": "THREEFYTP10",  # Kim-Wright 10年期限溢价(模型估计值,会回溯修正)
+    # 第二层 · 曲线
+    "nominal_2y":      "DGS2",
+    "nominal_3m":      "DGS3MO",
+    "spread_2s10s":    "T10Y2Y",
+    "spread_3m10s":    "T10Y3M",
+    # 第四层 · 定价检验
+    "move_ticker":     "^MOVE",       # 债市波动率,取不到会优雅跳过
+}
+
+# 归因 / 形态判定的回看窗口(交易日)
+UST_WINDOWS = {"1个月": 21, "3个月": 63, "6个月": 126, "1年": 252}
+UST_WINDOWS_EN = {"1 Month": 21, "3 Months": 63, "6 Months": 126, "1 Year": 252}
+UST_DEFAULT_WINDOW = "3个月"
+
+# 曲线形态:水平变动和利差变动都小于这个幅度(bps),就判为"横盘",不硬套四象限
+UST_REGIME_MIN_BP = 5.0
+# 归因:主导通道的判定门槛——某一通道贡献占比超过这个值才叫"主导"
+UST_DOMINANT_SHARE = 0.60
+
+# ── 拍卖监测(TreasuryDirect 公开接口,不需要 key)──────────────────────────
+AUCTION_API = "https://www.treasurydirect.gov/TA_WS/securities/auctioned"
+AUCTION_TYPES = ["Note", "Bond"]          # 先只看付息债;要加短债就加 "Bill"
+AUCTION_LOOKBACK_DAYS = 500               # 往回取多久(要够算基准均值)
+AUCTION_BASELINE_N = 6                    # bid-to-cover 跟同期限过去几次比
+AUCTION_SHOW_N = 12                       # 表格里显示最近几场
+# 一级交易商承接率高于这个值标红(被动兜底比例高 = 真实需求弱)
+AUCTION_DEALER_WARN = 20.0
+
 # ── CPI 分项(FRED 序列,按月,自动算同比)──────────────────────────────────
 # 加一个分项 = 加一行:key 随便起个英文名,name 中文,name_en 英文,fred 是 FRED 序列号。
 CPI_COMPONENTS = {
@@ -98,6 +136,7 @@ SENTIMENT = {
 PAGES = [
     ("市场总览",            "Market Overview",        "overview",  True),
     ("利率与曲线",          "Rates & Curve",          "rates",     True),
+    ("美债实验室",          "Treasury Lab",           "ust",       True),
     ("情绪 / 风险",         "Sentiment / Risk",       "sentiment", True),
     ("宏观日历 & 事件研究", "Calendar & Event Study", "events",    True),
     ("CPI 详情",            "CPI Detail",             "cpi",       True),
@@ -145,6 +184,72 @@ TEXT = {
         "nominal_vs_real": "10Y 名义 vs 实际收益率",
         "nominal10":       "10Y 名义",
         "real10_short":    "10Y 实际",
+        # 美债实验室
+        "ust_title":        "美债实验室",
+        "ust_need_key":     "本页需要免费 FRED key(在 Secrets 设 FRED_API_KEY)。",
+        "ust_window":       "回看窗口",
+        "ust_nom10":        "10Y 名义",
+        "ust_real10":       "10Y 实际",
+        "ust_be10":         "10Y 盈亏平衡",
+        "ust_be5y5y":       "5年后5年 远期",
+        "ust_tp10":         "10Y 期限溢价",
+        "ust_2s10s":        "2s10s 利差",
+        "ust_3m10s":        "3m10s 利差",
+        "ust_move":         "MOVE 债市波动",
+        "ust_tp_note":      "模型估计值,会修正",
+        "ust_anchor":       "长期通胀中枢",
+        # 第一层
+        "ust_decomp_title": "第一层 · 收益率分解归因",
+        "ust_decomp_sub":   "{win}内,10Y 名义收益率变动 {bp} bps。两刀拆开看它是什么构成的:",
+        "ust_cut1":         "第一刀:实际利率 + 通胀补偿",
+        "ust_cut2":         "第二刀:预期短端路径 + 期限溢价",
+        "ust_bar_nominal":  "名义变动",
+        "ust_bar_real":     "实际利率贡献",
+        "ust_bar_be":       "通胀补偿贡献",
+        "ust_bar_path":     "预期路径贡献",
+        "ust_bar_tp":       "期限溢价贡献",
+        "ust_read_a":       "**A 政策路径主导** —— 市场在重新定价美联储。风险资产通常同步受压,美元偏强,黄金承压。",
+        "ust_read_b":       "**B 期限溢价主导** —— 供给 / 财政 / 不确定性的故事。常见股债双杀,美元和黄金的反应可能与 A 情形相反。",
+        "ust_read_c":       "**C 通胀补偿主导** —— 实际利率未必动,黄金反而可能受益。去看 5年后5年远期有没有跟着走;只有短端在动,那就只是油价。",
+        "ust_read_real":    "**实际利率主导** —— 名义变动主要来自实际利率,不是通胀预期。但要分清是 A(政策路径)还是 B(期限溢价),得看第二刀。",
+        "ust_read_mix":     "没有单一通道主导(最大贡献占比不足 {pct}%)。这一段是混合驱动,别急着讲故事。",
+        "ust_read_flat":    "{win}内 10Y 基本没动({bp} bps),没有值得归因的变动。",
+        "ust_tp_missing":   "期限溢价序列暂时取不到,第二刀跳过(Kim-Wright 发布本身有滞后)。",
+        "ust_verify":       "交叉验证:如果归因指向期限溢价,那么下面的拍卖数据里应该能看到一级交易商承接率上升、需求转弱。看不到,说明这个故事讲错了。",
+        # 第二层
+        "ust_regime_title": "第二层 · 曲线形态",
+        "ust_bull_steep":   "牛陡 · 宽松预期启动",
+        "ust_bull_flat":    "牛平 · 避险 / 增长恐慌",
+        "ust_bear_steep":   "熊陡 · 财政 / 供给 / 再通胀",
+        "ust_bear_flat":    "熊平 · 紧缩预期加码",
+        "ust_steepen":      "陡化 · 水平没动,只有斜率在走",
+        "ust_flatten":      "平坦化 · 水平没动,只有斜率在走",
+        "ust_bear_par":     "熊市平移 · 整条曲线上移,斜率基本没变",
+        "ust_bull_par":     "牛市平移 · 整条曲线下移,斜率基本没变",
+        "ust_regime_flat":  "横盘 · 变动不足 {bp} bps,不判方向",
+        "ust_regime_now":   "当前形态:",
+        "ust_regime_detail": "{win}内:2Y {d2} bps · 10Y {d10} bps · 利差 {ds} bps",
+        "ust_quad_title":   "四象限轨迹(过去 1 年,每周一个点)",
+        "ust_quad_x":       "利差变动(bps) · 右=陡化,左=平坦化",
+        "ust_quad_y":       "水平变动(bps) · 上=熊,下=牛",
+        "ust_quad_note":    "亮色是最新一周。形态发生切换时记一条:日期、切到哪一格、**查数据之前**先写下预期的资产反应、事后写实际反应。",
+        # 第三层
+        "ust_auction_title": "第三层 · 拍卖监测",
+        "ust_auction_sub":  "每场拍卖都是一次真实的需求测试。数据直接取自 TreasuryDirect 公开接口,不需要 key。",
+        "ust_col_date":     "拍卖日",
+        "ust_col_term":     "期限",
+        "ust_col_yield":    "中标利率",
+        "ust_col_btc":      "投标倍数",
+        "ust_col_btc_diff": "对比近{n}次",
+        "ust_col_dealer":   "一级交易商承接",
+        "ust_col_indirect": "间接投资者",
+        "ust_auction_fail": "拍卖数据暂时取不到(TreasuryDirect 接口可能临时不可用或字段有变)。不影响本页其他内容。",
+        "ust_auction_note": "投标倍数的绝对值没有意义,只跟**同期限**过去 {n} 次比。一级交易商是被动兜底方,承接率高说明真实需求没接住,通常伴随 tail 走扩。注意:tail(中标利率减 when-issued)这里算不出来——TreasuryDirect 不提供 when-issued 价格,要看 tail 得另找数据源。",
+        # 第四层
+        "ust_check_title":  "第四层 · 定价检验",
+        "ust_move_note":    "MOVE 是债市版的 VIX。它快速上行不只是情绪——基差交易杠杆很高,波动率飙升会触发保证金追缴和平仓,反过来放大债市本身的波动。它也是区分「流动性事件」和「基本面重定价」的工具。",
+        "ust_cot_note":     "期货持仓(CFTC 周度)还没接进来,暂时在 notebook 里做。提醒自己:利率期货里杠杆基金的巨额净空头大多是基差交易,不是方向性看空;要看的是**资产管理人净多头**的历史分位。",
+        "ust_handbook":     "本页对应《美债研究手册》的第一到第四层。第五层(票息 / 骑乘 / 融资 / 久期 / 凸性 → 仓位)在手册里,不在这个页面。",
         # 情绪 / 风险
         "sent_title":      "情绪 / 风险",
         "vix_card":        "VIX 股市波动",
@@ -223,6 +328,72 @@ TEXT = {
         "nominal_vs_real": "10Y Nominal vs Real Yield",
         "nominal10":       "10Y Nominal",
         "real10_short":    "10Y Real",
+        # Treasury Lab
+        "ust_title":        "Treasury Lab",
+        "ust_need_key":     "This page needs a free FRED key (set FRED_API_KEY in Secrets).",
+        "ust_window":       "Lookback window",
+        "ust_nom10":        "10Y Nominal",
+        "ust_real10":       "10Y Real",
+        "ust_be10":         "10Y Breakeven",
+        "ust_be5y5y":       "5y5y Forward",
+        "ust_tp10":         "10Y Term Premium",
+        "ust_2s10s":        "2s10s Spread",
+        "ust_3m10s":        "3m10s Spread",
+        "ust_move":         "MOVE (Bond Vol)",
+        "ust_tp_note":      "Model estimate — gets revised",
+        "ust_anchor":       "Long-run inflation anchor",
+        # Layer 1
+        "ust_decomp_title": "Layer 1 · Yield Decomposition",
+        "ust_decomp_sub":   "Over the past {win}, the 10Y nominal yield moved {bp} bps. Two ways to cut it:",
+        "ust_cut1":         "Cut one: real yield + inflation compensation",
+        "ust_cut2":         "Cut two: expected policy path + term premium",
+        "ust_bar_nominal":  "Nominal move",
+        "ust_bar_real":     "Real yield contribution",
+        "ust_bar_be":       "Breakeven contribution",
+        "ust_bar_path":     "Expected path contribution",
+        "ust_bar_tp":       "Term premium contribution",
+        "ust_read_a":       "**Channel A — policy path dominates.** The market is repricing the Fed. Risk assets usually come under pressure together, the dollar firms, gold struggles.",
+        "ust_read_b":       "**Channel B — term premium dominates.** A supply / fiscal / uncertainty story. Often stocks and bonds fall together, and the dollar and gold can react opposite to the Channel A case.",
+        "ust_read_c":       "**Channel C — inflation compensation dominates.** Real yields may not have moved at all, and gold can actually benefit. Check whether 5y5y forward moved too; if only the front end moved, it is just oil.",
+        "ust_read_real":    "**Real yields dominate** — the nominal move came from real yields, not inflation expectations. Separating Channel A (policy path) from Channel B (term premium) takes cut two.",
+        "ust_read_mix":     "No single channel dominates (the largest contribution is under {pct}%). This stretch is mixed — don't reach for a story yet.",
+        "ust_read_flat":    "The 10Y barely moved over the past {win} ({bp} bps) — nothing worth attributing.",
+        "ust_tp_missing":   "Term premium series unavailable right now, so cut two is skipped (Kim-Wright is published with a lag).",
+        "ust_verify":       "Cross-check: if the attribution points to term premium, the auction data below should show primary dealer takedown rising. If it doesn't, the story is wrong.",
+        # Layer 2
+        "ust_regime_title": "Layer 2 · Curve Regime",
+        "ust_bull_steep":   "Bull steepener · easing expectations",
+        "ust_bull_flat":    "Bull flattener · flight to quality",
+        "ust_bear_steep":   "Bear steepener · fiscal / supply / reflation",
+        "ust_bear_flat":    "Bear flattener · tightening repriced",
+        "ust_steepen":      "Steepening · level flat, only the slope moved",
+        "ust_flatten":      "Flattening · level flat, only the slope moved",
+        "ust_bear_par":     "Bear parallel shift · whole curve up, slope unchanged",
+        "ust_bull_par":     "Bull parallel shift · whole curve down, slope unchanged",
+        "ust_regime_flat":  "Range-bound · moves under {bp} bps, no call",
+        "ust_regime_now":   "Current regime: ",
+        "ust_regime_detail": "Over {win}: 2Y {d2} bps · 10Y {d10} bps · spread {ds} bps",
+        "ust_quad_title":   "Regime map (past year, one point per week)",
+        "ust_quad_x":       "Spread change (bps) · right = steepening, left = flattening",
+        "ust_quad_y":       "Level change (bps) · up = bear, down = bull",
+        "ust_quad_note":    "The bright point is the latest week. When the regime flips, log it: date, which quadrant, the asset reaction you expect written down **before** you check, then what actually happened.",
+        # Layer 3
+        "ust_auction_title": "Layer 3 · Auction Monitor",
+        "ust_auction_sub":  "Every auction is a live demand test. Data comes straight from the TreasuryDirect public API — no key needed.",
+        "ust_col_date":     "Auction date",
+        "ust_col_term":     "Term",
+        "ust_col_yield":    "High yield",
+        "ust_col_btc":      "Bid-to-cover",
+        "ust_col_btc_diff": "vs last {n}",
+        "ust_col_dealer":   "Dealer takedown",
+        "ust_col_indirect": "Indirect bidders",
+        "ust_auction_fail": "Auction data unavailable right now (the TreasuryDirect API may be down or its fields may have changed). The rest of this page is unaffected.",
+        "ust_auction_note": "The absolute bid-to-cover means nothing — compare it only with the **same tenor's** last {n} auctions. Primary dealers are the backstop buyer, so a high takedown means real demand didn't show up, usually alongside a wider tail. Note: tail (high yield minus when-issued) can't be computed here — TreasuryDirect doesn't publish when-issued levels, so tail needs another data source.",
+        # Layer 4
+        "ust_check_title":  "Layer 4 · Positioning Check",
+        "ust_move_note":    "MOVE is the bond market's VIX. A fast move up is not just sentiment — basis trades are highly levered, so a vol spike triggers margin calls and unwinds that amplify bond volatility itself. It also separates a liquidity event from a fundamental repricing.",
+        "ust_cot_note":     "Futures positioning (weekly CFTC) isn't wired in yet — still done in the notebook. Reminder: the huge leveraged-fund net shorts in rate futures are mostly basis trades, not directional bearishness. What to watch is the **asset manager net long** and its historical percentile.",
+        "ust_handbook":     "This page covers Layers 1–4 of the Treasury research handbook. Layer 5 (carry / roll-down / financing / duration / convexity → position sizing) lives in the handbook, not here.",
         # Sentiment / risk
         "sent_title":      "Sentiment / Risk",
         "vix_card":        "VIX (Equity Vol)",

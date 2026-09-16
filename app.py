@@ -223,6 +223,256 @@ def page_rates():
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# 页面:美债实验室(对应《美债研究手册》第一 ~ 第四层)
+# ════════════════════════════════════════════════════════════════════════════
+def _ust_pick_window():
+    """回看窗口下拉框。中英文标签不同但天数一一对应,按位置取默认值。"""
+    zh_keys = list(C.UST_WINDOWS.keys())
+    idx = zh_keys.index(C.UST_DEFAULT_WINDOW) if C.UST_DEFAULT_WINDOW in zh_keys else 1
+    wins = C.UST_WINDOWS_EN if lang() == "en" else C.UST_WINDOWS
+    keys = list(wins.keys())
+    label = st.selectbox(t("ust_window"), keys, index=min(idx, len(keys) - 1))
+    return label, wins[label]
+
+
+def _chg_bp(s: pd.Series, w: int):
+    """序列在 w 个观测值之前到现在的变动,换算成 bps(FRED 利率序列单位是 %)。"""
+    s = s.dropna()
+    if len(s) < w + 1:
+        return None
+    return float((s.iloc[-1] - s.iloc[-(w + 1)]) * 100)
+
+
+def _aligned_chg(series_map: dict, w: int):
+    """先对齐再算变动,这样恒等式(名义 = 实际 + 通胀补偿)能严格对上。
+    任何一个序列缺失就返回 None。"""
+    parts = {k: v.dropna() for k, v in series_map.items() if v is not None and not v.dropna().empty}
+    if len(parts) != len(series_map):
+        return None
+    df = pd.concat(parts, axis=1).dropna()
+    if len(df) < w + 1:
+        return None
+    d = (df.iloc[-1] - df.iloc[-(w + 1)]) * 100
+    return {k: float(d[k]) for k in series_map}
+
+
+def _contrib_bar(pairs, title):
+    """pairs: [(名称, bps, 颜色)] —— 横向条形图,正负都画。"""
+    names = [p[0] for p in pairs]
+    vals = [p[1] for p in pairs]
+    colors = [p[2] for p in pairs]
+    fig = go.Figure(go.Bar(
+        x=vals, y=names, orientation="h", marker_color=colors,
+        text=[f"{v:+.0f}" for v in vals], textposition="outside",
+        cliponaxis=False))
+    fig.update_layout(showlegend=False, xaxis_title="bps")
+    fig.update_yaxes(autorange="reversed")
+    st.markdown(f"**{title}**")
+    st.plotly_chart(style_fig(fig, 170), use_container_width=True)
+
+
+def page_ust():
+    st.markdown('<div class="eyebrow">TREASURY LAB</div>', unsafe_allow_html=True)
+    st.markdown(f"## {t('ust_title')}")
+    if not core.fred_key():
+        st.markdown(f'<div class="note">{t("ust_need_key")}</div>', unsafe_allow_html=True)
+        return
+
+    U = C.UST
+    s_nom = core.fred_series(U["nominal_10y"])
+    s_real = core.fred_series(U["real_10y"])
+    s_be = core.fred_series(U["breakeven_10y"])
+    s_5y5y = core.fred_series(U["breakeven_5y5y"])
+    s_tp = core.fred_series(U["term_premium_10y"])
+    s_2y = core.fred_series(U["nominal_2y"])
+    s_3m = core.fred_series(U["nominal_3m"])
+    s_2s10s = core.fred_series(U["spread_2s10s"])
+    s_3m10s = core.fred_series(U["spread_3m10s"])
+    move = core.yf_one(U["move_ticker"], "2y")
+
+    # ── 快照卡片 ──
+    def _last(s):
+        s = s.dropna()
+        return float(s.iloc[-1]) if not s.empty else None
+
+    items = []
+    for key, s, color, note in [
+        ("ust_nom10", s_nom, T["accent"], None),
+        ("ust_real10", s_real, T["accent"], t("gold_driver")),
+        ("ust_be10", s_be, T["gold"], None),
+        ("ust_be5y5y", s_5y5y, T["gold"], t("ust_anchor")),
+        ("ust_tp10", s_tp, T["up"], t("ust_tp_note")),
+    ]:
+        v = _last(s)
+        items.append((t(key), f"{v:.2f}%" if v is not None else "—", note, color))
+    for key, s in [("ust_2s10s", s_2s10s), ("ust_3m10s", s_3m10s)]:
+        v = _last(s)
+        items.append((t(key), f"{v * 100:+.0f} bps" if v is not None else "—",
+                      t("inverted") if (v or 0) < 0 else t("normal"),
+                      T["down"] if (v or 0) < 0 else T["up"]))
+    mv = _last(move)
+    items.append((t("ust_move"), f"{mv:.0f}" if mv is not None else "—", None, T["muted"]))
+    core.cards_row(items)
+
+    win_label, w = _ust_pick_window()
+    st.divider()
+
+    # ── 第一层:收益率分解归因 ──
+    st.markdown(f"### {t('ust_decomp_title')}")
+    d_nom = _chg_bp(s_nom, w)
+    cut1 = _aligned_chg({"nom": s_nom, "real": s_real, "be": s_be}, w)
+    cut2 = _aligned_chg({"nom": s_nom, "tp": s_tp}, w)
+
+    if d_nom is None or cut1 is None:
+        st.markdown(f'<div class="note">{t("fetch_fail", names="FRED")}</div>', unsafe_allow_html=True)
+    else:
+        st.caption(t("ust_decomp_sub", win=win_label, bp=f"{cut1['nom']:+.0f}"))
+        c1, c2 = st.columns(2)
+        with c1:
+            _contrib_bar([
+                (t("ust_bar_nominal"), cut1["nom"], T["muted"]),
+                (t("ust_bar_real"), cut1["real"], T["accent"]),
+                (t("ust_bar_be"), cut1["be"], T["gold"]),
+            ], t("ust_cut1"))
+        with c2:
+            if cut2 is None:
+                st.markdown(f"**{t('ust_cut2')}**")
+                st.markdown(f'<div class="note">{t("ust_tp_missing")}</div>', unsafe_allow_html=True)
+            else:
+                _contrib_bar([
+                    (t("ust_bar_nominal"), cut2["nom"], T["muted"]),
+                    (t("ust_bar_path"), cut2["nom"] - cut2["tp"], T["down"]),
+                    (t("ust_bar_tp"), cut2["tp"], T["up"]),
+                ], t("ust_cut2"))
+
+        # 一句话解读:哪个通道主导
+        thr = C.UST_DOMINANT_SHARE
+        pct_txt = f"{thr * 100:.0f}"
+        if abs(cut1["nom"]) < C.UST_REGIME_MIN_BP:
+            read = t("ust_read_flat", win=win_label, bp=f"{cut1['nom']:+.0f}")
+        else:
+            denom1 = abs(cut1["real"]) + abs(cut1["be"]) or 1.0
+            if abs(cut1["be"]) / denom1 > thr:
+                read = t("ust_read_c")
+            elif cut2 is None:
+                read = t("ust_read_real")
+            else:
+                tp, path = cut2["tp"], cut2["nom"] - cut2["tp"]
+                denom2 = abs(tp) + abs(path) or 1.0
+                if abs(tp) / denom2 > thr:
+                    read = t("ust_read_b")
+                elif abs(path) / denom2 > thr:
+                    read = t("ust_read_a")
+                else:
+                    read = t("ust_read_mix", pct=pct_txt)
+        st.markdown(read)
+        st.markdown(f'<div class="note">{t("ust_verify")}</div>', unsafe_allow_html=True)
+
+    st.divider()
+
+    # ── 第二层:曲线形态四象限 ──
+    st.markdown(f"### {t('ust_regime_title')}")
+    d2, d10 = _chg_bp(s_2y, w), _chg_bp(s_nom, w)
+    if d2 is None or d10 is None:
+        st.markdown(f'<div class="note">{t("fetch_fail", names="DGS2 / DGS10")}</div>', unsafe_allow_html=True)
+    else:
+        level = (d2 + d10) / 2          # 水平:上=熊(收益率涨),下=牛
+        slope = d10 - d2                # 斜率:正=陡化,负=平坦化
+        mn = C.UST_REGIME_MIN_BP
+        # 两个维度各自判阈值:动得不够就不给方向,免得把几个 bps 的噪音讲成"熊陡"
+        lv = 0 if abs(level) < mn else (1 if level > 0 else -1)
+        sl = 0 if abs(slope) < mn else (1 if slope > 0 else -1)
+        REGIME = {
+            (0, 0):   ("ust_regime_flat", T["muted"]),
+            (0, 1):   ("ust_steepen",     T["gold"]),
+            (0, -1):  ("ust_flatten",     T["gold"]),
+            (1, 0):   ("ust_bear_par",    T["down"]),
+            (-1, 0):  ("ust_bull_par",    T["up"]),
+            (1, 1):   ("ust_bear_steep",  T["down"]),
+            (1, -1):  ("ust_bear_flat",   T["down"]),
+            (-1, 1):  ("ust_bull_steep",  T["up"]),
+            (-1, -1): ("ust_bull_flat",   T["up"]),
+        }
+        key, color = REGIME[(lv, sl)]
+        label = t(key, bp=f"{mn:.0f}") if key == "ust_regime_flat" else t(key)
+        st.markdown(f'{t("ust_regime_now")}<span class="pill" style="background:{color};'
+                    f'color:#0a0d17">{label}</span>', unsafe_allow_html=True)
+        st.caption(t("ust_regime_detail", win=win_label,
+                     d2=f"{d2:+.0f}", d10=f"{d10:+.0f}", ds=f"{slope:+.0f}"))
+
+        # 过去 1 年的每周轨迹
+        al = pd.concat({"2Y": s_2y.dropna(), "10Y": s_nom.dropna()}, axis=1).dropna()
+        wk = al.resample("W-FRI").last().dropna()
+        ww = max(1, int(round(w / 5)))
+        dd = ((wk - wk.shift(ww)) * 100).dropna()
+        dd = dd[dd.index >= dd.index.max() - pd.DateOffset(years=1)]
+        if len(dd) > 3:
+            x = dd["10Y"] - dd["2Y"]
+            y = (dd["10Y"] + dd["2Y"]) / 2
+            st.markdown(f"#### {t('ust_quad_title')}")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=x[:-1], y=y[:-1], mode="markers", name=" ",
+                                     marker=dict(size=7, color=T["muted"], opacity=.55)))
+            fig.add_trace(go.Scatter(x=[x.iloc[-1]], y=[y.iloc[-1]], mode="markers", name=" ",
+                                     marker=dict(size=14, color=T["gold"],
+                                                 line=dict(color=T["txt"], width=1))))
+            fig.add_hline(y=0, line=dict(color=T["line"], width=1))
+            fig.add_vline(x=0, line=dict(color=T["line"], width=1))
+            fig.update_layout(showlegend=False, xaxis_title=t("ust_quad_x"),
+                              yaxis_title=t("ust_quad_y"))
+            st.plotly_chart(style_fig(fig, 340), use_container_width=True)
+            st.markdown(f'<div class="note">{t("ust_quad_note")}</div>', unsafe_allow_html=True)
+
+    st.divider()
+
+    # ── 第三层:拍卖监测 ──
+    st.markdown(f"### {t('ust_auction_title')}")
+    st.caption(t("ust_auction_sub"))
+    au = core.fetch_auctions(C.AUCTION_LOOKBACK_DAYS)
+    if au.empty:
+        st.markdown(f'<div class="note">{t("ust_auction_fail")}</div>', unsafe_allow_html=True)
+    else:
+        au = core.btc_vs_baseline(au, C.AUCTION_BASELINE_N)
+        recent_au = au.sort_values("date", ascending=False).head(C.AUCTION_SHOW_N)
+        # 缺字段进了 DataFrame 会变成 NaN,"is not None" 拦不住,统一用这个判空
+        def _num(v, spec, suffix=""):
+            if v is None or pd.isna(v):
+                return "—"
+            return format(v, spec) + suffix
+
+        rows = []
+        for _, r in recent_au.iterrows():
+            dealer = r.get("dealer_pct")
+            warn = (dealer is not None and pd.notna(dealer) and dealer > C.AUCTION_DEALER_WARN)
+            rows.append({
+                t("ust_col_date"): r["date"].date(),
+                t("ust_col_term"): r["term"],
+                t("ust_col_yield"): _num(r.get("high_yield"), ".3f", "%"),
+                t("ust_col_btc"): _num(r.get("btc"), ".2f"),
+                t("ust_col_btc_diff", n=C.AUCTION_BASELINE_N): _num(r.get("btc_diff"), "+.2f"),
+                t("ust_col_dealer"): _num(dealer, ".1f", "%" + (" ⚠️" if warn else "")),
+                t("ust_col_indirect"): _num(r.get("indirect_pct"), ".1f", "%"),
+            })
+        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        st.markdown(f'<div class="note">{t("ust_auction_note", n=C.AUCTION_BASELINE_N)}</div>',
+                    unsafe_allow_html=True)
+
+    st.divider()
+
+    # ── 第四层:定价检验 ──
+    st.markdown(f"### {t('ust_check_title')}")
+    mvs = move.dropna()
+    if not mvs.empty:
+        fig = go.Figure(go.Scatter(x=mvs.index, y=mvs, line=dict(color=T["down"], width=1.6)))
+        st.plotly_chart(style_fig(fig, 240), use_container_width=True)
+    st.markdown(f'<div class="note">{t("ust_move_note")}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="note" style="margin-top:10px">{t("ust_cot_note")}</div>',
+                unsafe_allow_html=True)
+    st.markdown(f'<div class="note" style="margin-top:10px">{t("ust_handbook")}</div>',
+                unsafe_allow_html=True)
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # 页面:情绪 / 风险
 # ════════════════════════════════════════════════════════════════════════════
 def page_sentiment():
@@ -387,7 +637,7 @@ def page_placeholder(title, desc):
 
 
 PAGE_FUNCS = {
-    "overview": page_overview, "rates": page_rates, "sentiment": page_sentiment,
+    "overview": page_overview, "rates": page_rates, "ust": page_ust, "sentiment": page_sentiment,
     "events": page_events, "cpi": page_cpi,
     "portfolio": lambda: page_placeholder(t("portfolio_title"), t("portfolio_desc")),
     "brief": lambda: page_placeholder(t("brief_title"), t("brief_desc")),
