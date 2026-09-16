@@ -159,14 +159,15 @@ SENTIMENT = {
 # ── 导航(加页面 = 加一行 + 在 app.py 写个 render 函数)──────────────────────
 # 每行 = (中文名, 英文名, key, 是否启用)
 PAGES = [
-    ("市场总览",            "Market Overview",        "overview",  True),
-    ("利率与曲线",          "Rates & Curve",          "rates",     True),
-    ("美债实验室",          "Treasury Lab",           "ust",       True),
-    ("情绪 / 风险",         "Sentiment / Risk",       "sentiment", True),
-    ("宏观日历 & 事件研究", "Calendar & Event Study", "events",    True),
-    ("CPI 详情",            "CPI Detail",             "cpi",       True),
-    ("持仓监测 (Phase 2)",  "Portfolio (Phase 2)",    "portfolio", False),   # 占位
-    ("智能简报 (Phase 3)",  "Briefing (Phase 3)",     "brief",     False),   # 占位
+    ("市场总览",            "Market Overview",        "overview",   True),
+    ("利率与曲线",          "Rates & Curve",          "rates",      True),
+    ("曲线历史",            "Curve History",          "curve_hist", True),
+    ("美债实验室",          "Treasury Lab",           "ust",        True),
+    ("情绪 / 风险",         "Sentiment / Risk",       "sentiment",  True),
+    ("宏观日历 & 事件研究", "Calendar & Event Study", "events",     True),
+    ("CPI 详情",            "CPI Detail",             "cpi",        True),
+    ("持仓监测 (Phase 2)",  "Portfolio (Phase 2)",    "portfolio",  False),   # 占位
+    ("智能简报 (Phase 3)",  "Briefing (Phase 3)",     "brief",      False),   # 占位
 ]
 
 # ── 配色(与投资时钟保持一致)──────────────────────────────────────────────
@@ -218,6 +219,24 @@ TEXT = {
         "nominal_vs_real": "10Y 名义 vs 实际收益率",
         "nominal10":       "10Y 名义",
         "real10_short":    "10Y 实际",
+        # 曲线历史
+        "ch_title":        "曲线历史",
+        "ch_sub":          "10年期 − 2年期。跌破零 = 倒挂,1976 年以来每次美国衰退之前都出现过。灰色区间是 NBER 认定的衰退期。",
+        "ch_need_key":     "本页需要免费 FRED key(在 Secrets 设 FRED_API_KEY)。",
+        "ch_2s10s":        "10Y − 2Y",
+        "ch_3m10s":        "10Y − 3M",
+        "ch_2y":           "2年期",
+        "ch_10y":          "10年期",
+        "ch_vs_1m":        "对比一个月前",
+        "ch_state_inv":    "曲线已倒挂",
+        "ch_state_flat":   "曲线偏平",
+        "ch_state_norm":   "曲线正常",
+        "ch_chart_long":   "1976 至今(灰色 = 衰退期)",
+        "ch_chart_zoom":   "最近 5 年(当前周期)",
+        "ch_levels":       "收益率水平(最近 5 年)",
+        "ch_latest":       "最新数据:{date}",
+        "ch_download":     "下载 CSV",
+        "ch_note":         "每天看的不是这个数字本身,是方向:持续往 0 走 = 市场越来越认为政策过紧;持续走宽 = 市场越来越不这么认为。3m10s 在学术研究里预测衰退比 2s10s 更准,两条一起看。",
         # 美债实验室
         "ust_title":        "美债实验室",
         "ust_need_key":     "本页需要免费 FRED key(在 Secrets 设 FRED_API_KEY)。",
@@ -373,6 +392,24 @@ TEXT = {
         "nominal_vs_real": "10Y Nominal vs Real Yield",
         "nominal10":       "10Y Nominal",
         "real10_short":    "10Y Real",
+        # Curve history
+        "ch_title":        "Curve History",
+        "ch_sub":          "10-year minus 2-year. Below zero = inverted; every US recession since 1976 was preceded by one. Grey bands are NBER recessions.",
+        "ch_need_key":     "This page needs a free FRED key (set FRED_API_KEY in Secrets).",
+        "ch_2s10s":        "10Y − 2Y",
+        "ch_3m10s":        "10Y − 3M",
+        "ch_2y":           "2-year",
+        "ch_10y":          "10-year",
+        "ch_vs_1m":        "vs 1 month ago",
+        "ch_state_inv":    "Curve is INVERTED",
+        "ch_state_flat":   "Curve is flat",
+        "ch_state_norm":   "Curve is normal",
+        "ch_chart_long":   "Since 1976 (grey = recessions)",
+        "ch_chart_zoom":   "Last 5 years (current cycle)",
+        "ch_levels":       "Yield levels (last 5 years)",
+        "ch_latest":       "Latest data: {date}",
+        "ch_download":     "Download CSV",
+        "ch_note":         "What to watch daily is not the level but the direction: grinding toward zero means the market increasingly thinks policy is too tight; widening means the opposite. Academic work finds 3m10s predicts recessions better than 2s10s — watch both.",
         # Treasury Lab
         "ust_title":        "Treasury Lab",
         "ust_need_key":     "This page needs a free FRED key (set FRED_API_KEY in Secrets).",

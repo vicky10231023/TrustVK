@@ -13,7 +13,7 @@ import plotly.graph_objects as go
 import config as C
 import core
 import events as E
-from yield_curve import render_yield_curve
+from yield_curve import fetch_fred as yc_fetch, fetch_recessions as yc_recessions
 
 st.set_page_config(page_title="宏观作战室 · Macro War Room", page_icon="🧭", layout="wide")
 core.inject_css()
@@ -267,6 +267,121 @@ def page_rates():
             r = core.recent(real, years=2)
             fig.add_trace(go.Scatter(x=r.index, y=r, name=t("real10_short"), line=dict(color=T["gold"], width=2)))
         st.plotly_chart(style_fig(fig, 300), use_container_width=True)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# 页面:曲线历史(1976 至今 + NBER 衰退阴影)
+# 数据自己取(要 1976 年起的长历史),画图沿用本文件的深色主题。
+# ════════════════════════════════════════════════════════════════════════════
+def _ch_curve_fig(series_map: dict, recessions, height=380):
+    """series_map: {显示名: Series(单位 %)}。纵轴统一换算成 bps。"""
+    fig = go.Figure()
+    colors = [T["accent"], T["gold"], T["up"], T["down"]]
+    for i, (label, s) in enumerate(series_map.items()):
+        if s is None or s.empty:
+            continue
+        fig.add_trace(go.Scatter(
+            x=s.index, y=s.values * 100, name=label, mode="lines",
+            line=dict(width=1.6, color=colors[i % len(colors)]),
+            hovertemplate="%{x|%Y-%m-%d} · %{y:.0f} bps<extra>" + label + "</extra>"))
+    # 衰退阴影:画在最底层
+    for start, end in recessions:
+        fig.add_vrect(x0=start, x1=end, fillcolor=T["muted"], opacity=0.16,
+                      line_width=0, layer="below")
+    fig = style_fig(fig, height)
+    fig.add_hline(y=0, line=dict(color=T["txt"], width=1, dash="dash"))
+    fig.update_layout(yaxis_title="bps")
+    return fig
+
+
+def page_curve_history():
+    st.markdown('<div class="eyebrow">CURVE HISTORY</div>', unsafe_allow_html=True)
+    st.markdown(f"## {t('ch_title')}")
+    key = core.fred_key()
+    if not key:
+        st.markdown(f'<div class="note">{t("ch_need_key")}</div>', unsafe_allow_html=True)
+        return
+    st.caption(t("ch_sub"))
+
+    try:
+        s_2s10s = yc_fetch("T10Y2Y", key)
+        s_3m10s = yc_fetch("T10Y3M", key)
+        s_2y = yc_fetch("DGS2", key)
+        s_10y = yc_fetch("DGS10", key)
+        recessions = yc_recessions(key)
+    except Exception:
+        st.markdown(f'<div class="note">{t("fetch_fail", names="FRED")}</div>', unsafe_allow_html=True)
+        return
+
+    if s_2s10s.empty:
+        st.markdown(f'<div class="note">{t("fetch_fail", names="T10Y2Y")}</div>', unsafe_allow_html=True)
+        return
+
+    # ── 卡片 ──
+    def _last(s):
+        s = s.dropna()
+        return float(s.iloc[-1]) if not s.empty else None
+
+    v_sp, v_3m, v_2y, v_10y = _last(s_2s10s), _last(s_3m10s), _last(s_2y), _last(s_10y)
+    d_last = s_2s10s.dropna().index[-1]
+
+    prev = s_2s10s[s_2s10s.index <= d_last - pd.Timedelta(days=30)].dropna()
+    delta = f"{(v_sp - float(prev.iloc[-1])) * 100:+.0f} bps · {t('ch_vs_1m')}" if len(prev) else None
+
+    sp_bp = v_sp * 100
+    color = T["down"] if sp_bp < 0 else (T["gold"] if sp_bp < 30 else T["up"])
+    state = t("ch_state_inv") if sp_bp < 0 else (t("ch_state_flat") if sp_bp < 30 else t("ch_state_norm"))
+
+    items = [(t("ch_2s10s"), f"{sp_bp:+.0f} bps", delta, color)]
+    if v_3m is not None:
+        items.append((t("ch_3m10s"), f"{v_3m * 100:+.0f} bps", None,
+                      T["down"] if v_3m < 0 else T["up"]))
+    if v_2y is not None:
+        items.append((t("ch_2y"), f"{v_2y:.3f}%", None, T["muted"]))
+    if v_10y is not None:
+        items.append((t("ch_10y"), f"{v_10y:.3f}%", None, T["muted"]))
+    core.cards_row(items)
+
+    st.markdown(f'<span class="pill" style="background:{color};color:#0a0d17">{state}</span>',
+                unsafe_allow_html=True)
+    st.caption(t("ch_latest", date=d_last.date()))
+
+    st.divider()
+
+    # ── 主图:1976 至今 ──
+    st.markdown(f"#### {t('ch_chart_long')}")
+    st.plotly_chart(_ch_curve_fig({t("ch_2s10s"): s_2s10s, t("ch_3m10s"): s_3m10s},
+                                  recessions, 400),
+                    use_container_width=True)
+
+    # ── 放大图:最近 5 年 ──
+    cut = pd.Timestamp.today() - pd.DateOffset(years=5)
+    st.markdown(f"#### {t('ch_chart_zoom')}")
+    st.plotly_chart(_ch_curve_fig({t("ch_2s10s"): s_2s10s[s_2s10s.index >= cut],
+                                   t("ch_3m10s"): s_3m10s[s_3m10s.index >= cut]},
+                                  [(a, b) for a, b in recessions if b >= cut], 320),
+                    use_container_width=True)
+
+    # ── 水平收益率 ──
+    st.markdown(f"#### {t('ch_levels')}")
+    fig = go.Figure()
+    for label, s, col in [(t("ch_2y"), s_2y, T["down"]), (t("ch_10y"), s_10y, T["accent"])]:
+        s = s[s.index >= cut].dropna()
+        if s.empty:
+            continue
+        fig.add_trace(go.Scatter(x=s.index, y=s, name=label, mode="lines",
+                                 line=dict(width=1.8, color=col),
+                                 hovertemplate="%{x|%Y-%m-%d} · %{y:.2f}%<extra>" + label + "</extra>"))
+    fig = style_fig(fig, 300)
+    fig.update_layout(yaxis_title="%")
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown(f'<div class="note">{t("ch_note")}</div>', unsafe_allow_html=True)
+
+    out = pd.DataFrame({"T10Y2Y": s_2s10s, "T10Y3M": s_3m10s,
+                        "DGS2": s_2y, "DGS10": s_10y}).dropna(how="all")
+    st.download_button(t("ch_download"), out.to_csv().encode("utf-8"),
+                       file_name=f"yield_curve_{dt.date.today():%Y%m%d}.csv", mime="text/csv")
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -697,7 +812,8 @@ def page_placeholder(title, desc):
 
 
 PAGE_FUNCS = {
-    "overview": page_overview, "rates": page_rates, "ust": page_ust, "sentiment": page_sentiment,
+    "overview": page_overview, "rates": page_rates, "curve_hist": page_curve_history,
+    "ust": page_ust, "sentiment": page_sentiment,
     "events": page_events, "cpi": page_cpi,
     "portfolio": lambda: page_placeholder(t("portfolio_title"), t("portfolio_desc")),
     "brief": lambda: page_placeholder(t("brief_title"), t("brief_desc")),
