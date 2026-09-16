@@ -245,7 +245,8 @@ def _chg_bp(s: pd.Series, w: int):
 
 def _aligned_chg(series_map: dict, w: int):
     """先对齐再算变动,这样恒等式(名义 = 实际 + 通胀补偿)能严格对上。
-    任何一个序列缺失就返回 None。"""
+    任何一个序列缺失就返回 None。额外带回 _start / _end:对齐之后这一刀真正用的窗口
+    ——期限溢价发布有滞后,所以两刀的窗口末端可能差几天,名义变动也会差几个 bps。"""
     parts = {k: v.dropna() for k, v in series_map.items() if v is not None and not v.dropna().empty}
     if len(parts) != len(series_map):
         return None
@@ -253,10 +254,12 @@ def _aligned_chg(series_map: dict, w: int):
     if len(df) < w + 1:
         return None
     d = (df.iloc[-1] - df.iloc[-(w + 1)]) * 100
-    return {k: float(d[k]) for k in series_map}
+    out = {k: float(d[k]) for k in series_map}
+    out["_start"], out["_end"] = df.index[-(w + 1)], df.index[-1]
+    return out
 
 
-def _contrib_bar(pairs, title):
+def _contrib_bar(pairs, title, asof=None):
     """pairs: [(名称, bps, 颜色)] —— 横向条形图,正负都画。"""
     names = [p[0] for p in pairs]
     vals = [p[1] for p in pairs]
@@ -264,11 +267,15 @@ def _contrib_bar(pairs, title):
     fig = go.Figure(go.Bar(
         x=vals, y=names, orientation="h", marker_color=colors,
         text=[f"{v:+.0f}" for v in vals], textposition="outside",
-        cliponaxis=False))
+        hovertemplate="%{y}: %{x:+.0f} bps<extra></extra>", cliponaxis=False))
+    st.markdown(f"**{title}**")
+    if asof:
+        st.caption(f"{asof[0].date()} → {asof[1].date()}")
+    # style_fig 会把 showlegend 打开,所以关图例要放在它之后
+    fig = style_fig(fig, 170)
     fig.update_layout(showlegend=False, xaxis_title="bps")
     fig.update_yaxes(autorange="reversed")
-    st.markdown(f"**{title}**")
-    st.plotly_chart(style_fig(fig, 170), use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def page_ust():
@@ -333,7 +340,7 @@ def page_ust():
                 (t("ust_bar_nominal"), cut1["nom"], T["muted"]),
                 (t("ust_bar_real"), cut1["real"], T["accent"]),
                 (t("ust_bar_be"), cut1["be"], T["gold"]),
-            ], t("ust_cut1"))
+            ], t("ust_cut1"), asof=(cut1["_start"], cut1["_end"]))
         with c2:
             if cut2 is None:
                 st.markdown(f"**{t('ust_cut2')}**")
@@ -343,7 +350,9 @@ def page_ust():
                     (t("ust_bar_nominal"), cut2["nom"], T["muted"]),
                     (t("ust_bar_path"), cut2["nom"] - cut2["tp"], T["down"]),
                     (t("ust_bar_tp"), cut2["tp"], T["up"]),
-                ], t("ust_cut2"))
+                ], t("ust_cut2"), asof=(cut2["_start"], cut2["_end"]))
+                if cut2["_end"] != cut1["_end"]:
+                    st.caption(t("ust_tp_lag"))
 
         # 一句话解读:哪个通道主导
         thr = C.UST_DOMINANT_SHARE
@@ -411,16 +420,19 @@ def page_ust():
             y = (dd["10Y"] + dd["2Y"]) / 2
             st.markdown(f"#### {t('ust_quad_title')}")
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=x[:-1], y=y[:-1], mode="markers", name=" ",
-                                     marker=dict(size=7, color=T["muted"], opacity=.55)))
-            fig.add_trace(go.Scatter(x=[x.iloc[-1]], y=[y.iloc[-1]], mode="markers", name=" ",
+            fig.add_trace(go.Scatter(x=x[:-1], y=y[:-1], mode="markers",
+                                     marker=dict(size=7, color=T["muted"], opacity=.55),
+                                     hovertemplate="利差 %{x:+.0f} · 水平 %{y:+.0f} bps<extra></extra>"))
+            fig.add_trace(go.Scatter(x=[x.iloc[-1]], y=[y.iloc[-1]], mode="markers",
                                      marker=dict(size=14, color=T["gold"],
-                                                 line=dict(color=T["txt"], width=1))))
+                                                 line=dict(color=T["txt"], width=1)),
+                                     hovertemplate="最新:利差 %{x:+.0f} · 水平 %{y:+.0f} bps<extra></extra>"))
             fig.add_hline(y=0, line=dict(color=T["line"], width=1))
             fig.add_vline(x=0, line=dict(color=T["line"], width=1))
+            fig = style_fig(fig, 340)
             fig.update_layout(showlegend=False, xaxis_title=t("ust_quad_x"),
                               yaxis_title=t("ust_quad_y"))
-            st.plotly_chart(style_fig(fig, 340), use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True)
             st.markdown(f'<div class="note">{t("ust_quad_note")}</div>', unsafe_allow_html=True)
 
     st.divider()
