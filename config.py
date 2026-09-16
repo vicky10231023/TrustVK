@@ -32,7 +32,29 @@ ASSETS = {
     "spx":    {"name": "标普500",        "name_en": "S&P 500",           "ticker": "^GSPC",    "grp": "股票",   "fmt": "{:,.0f}"},
     "vix":    {"name": "VIX 恐慌",       "name_en": "VIX",               "ticker": "^VIX",     "grp": "波动率", "fmt": "{:,.2f}"},
     "ust10":  {"name": "美债10年收益率", "name_en": "US 10Y Yield",      "ticker": "^TNX", "fred": "DGS10", "grp": "利率", "fmt": "{:,.2f}", "is_yield": True},
+    # 下面四个只有 FRED 有,yfinance 没有对应代码,所以 ticker 留空(取不到会优雅跳过)
+    "ust2":   {"name": "美债2年收益率",  "name_en": "US 2Y Yield",       "ticker": "", "fred": "DGS2",   "grp": "利率", "fmt": "{:,.2f}", "is_yield": True},
+    "ust10r": {"name": "10Y 实际收益率", "name_en": "10Y Real Yield",    "ticker": "", "fred": "DFII10", "grp": "利率", "fmt": "{:,.2f}", "is_yield": True},
+    "be10":   {"name": "10Y 盈亏平衡",   "name_en": "10Y Breakeven",     "ticker": "", "fred": "T10YIE", "grp": "通胀", "fmt": "{:,.2f}", "is_yield": True},
+    "hyoas":  {"name": "高收益债利差",   "name_en": "HY Credit Spread",  "ticker": "", "fred": "BAMLH0A0HYM2", "grp": "信用", "fmt": "{:,.2f}", "is_yield": True},
 }
+
+# ── 市场总览的排布 ───────────────────────────────────────────────────────────
+# 按宏观功能分组,而不是平铺一排:四象限(增长 × 通胀)的位置一眼能读出来。
+# 想加回白银/日元/人民币,把 code 填进对应的组就行。
+OVERVIEW_GROUPS = [
+    ("ov_grp_policy", ["ust2", "ust10", "ust10r"]),   # 政策与利率
+    ("ov_grp_growth", ["spx", "copper", "hyoas"]),    # 增长轴
+    ("ov_grp_infl",   ["wti", "be10"]),               # 通胀轴
+    ("ov_grp_usd",    ["dxy", "gold", "vix"]),        # 美元与避险
+]
+# 收益率画原始 %(不做基准化——4.5%→4.97% 基准化后是 +10%,视觉上会被严重放大)
+OVERVIEW_YIELD_CHART = ["ust10", "ust2", "ust10r"]
+# 价格类才做基准化 = 100
+OVERVIEW_PRICE_CHART = ["gold", "wti", "dxy", "spx"]
+OVERVIEW_WINDOWS = {"3个月": 90, "6个月": 180, "1年": 365}
+OVERVIEW_WINDOWS_EN = {"3 Months": 90, "6 Months": 180, "1 Year": 365}
+OVERVIEW_DEFAULT_WINDOW = "6个月"
 
 # 事件研究默认观察的资产(可在界面里改)
 DEFAULT_REACTION_ASSETS = ["gold", "dxy", "spx", "ust10", "usdjpy"]
@@ -171,6 +193,15 @@ TEXT = {
         "overview_title":  "市场总览",
         "fetch_fail":      "取数失败:{names}(可能是行情源临时不可用或需 FRED key;刷新或稍后再试)。",
         "trend_6m":        "6 个月走势(基准化 = 100)",
+        "ov_grp_policy":   "政策与利率",
+        "ov_grp_growth":   "增长",
+        "ov_grp_infl":     "通胀",
+        "ov_grp_usd":      "美元与避险",
+        "ov_window":       "时间窗口",
+        "ov_chart_yield":  "收益率走势(%)",
+        "ov_chart_price":  "价格类走势(基准化 = 100)",
+        "ov_chart_note":   "收益率单独画原始 %:4.5% 涨到 4.97% 做成基准化是 +10%,看起来会和标普涨 10% 一样大,但意思完全不同。",
+        "ov_quad_hint":    "读法:增长那一组和通胀那一组同时看,就是四象限里的位置。铜和高收益债利差比股指诚实——股指里混了估值。",
         "pick_assets":     "选择对比资产",
         # 利率与曲线
         "rates_title":     "利率与曲线",
@@ -316,6 +347,15 @@ TEXT = {
         "overview_title":  "Market Overview",
         "fetch_fail":      "Could not load: {names} (the data source may be temporarily down or needs a FRED key — refresh or try again later).",
         "trend_6m":        "6-Month Trend (rebased to 100)",
+        "ov_grp_policy":   "Policy & Rates",
+        "ov_grp_growth":   "Growth",
+        "ov_grp_infl":     "Inflation",
+        "ov_grp_usd":      "Dollar & Haven",
+        "ov_window":       "Window",
+        "ov_chart_yield":  "Yields (%)",
+        "ov_chart_price":  "Price assets (rebased to 100)",
+        "ov_chart_note":   "Yields are plotted at their raw level: 4.5% rising to 4.97% is +10% once rebased, which looks as big as the S&P gaining 10% but means something entirely different.",
+        "ov_quad_hint":    "How to read it: the growth row and the inflation row together give you the quadrant. Copper and credit spreads are more honest than the index — equities carry a valuation component.",
         "pick_assets":     "Select assets to compare",
         # Rates & curve
         "rates_title":     "Rates & Yield Curve",

@@ -146,35 +146,81 @@ def page_overview():
     st.markdown('<div class="eyebrow">CROSS-ASSET</div>', unsafe_allow_html=True)
     st.markdown(f"## {t('overview_title')}")
 
-    codes = list(C.ASSETS.keys())
-    items = []
+    # 分组展示的 + 两张图要用的,合起来才是这一页真正需要取的序列
+    codes = []
+    for _, group in C.OVERVIEW_GROUPS:
+        codes += group
+    codes += [c for c in C.OVERVIEW_YIELD_CHART + C.OVERVIEW_PRICE_CHART if c not in codes]
+    codes = [c for c in dict.fromkeys(codes) if c in C.ASSETS]
+
     series_cache = {}
     for code in codes:
-        s = asset_series(code, "1y")
-        series_cache[code] = s
+        series_cache[code] = asset_series(code, "1y")
+
+    def _card(code):
+        s = series_cache.get(code, pd.Series(dtype=float))
         last, absc, pct = core.last_and_change(s)
         ch, color = core.chg_str(absc, pct, C.ASSETS[code].get("is_yield"))
-        items.append((aname(code), core.fmt(code, last), ch, color))
-    core.cards_row(items)
+        return (aname(code), core.fmt(code, last), ch, color)
+
+    for label_key, group in C.OVERVIEW_GROUPS:
+        group = [c for c in group if c in C.ASSETS]
+        if not group:
+            continue
+        st.markdown(f"**{t(label_key)}**")
+        core.cards_row([_card(c) for c in group])
 
     miss = [c for c in codes if series_cache[c].empty]
     if miss:
         st.markdown(f'<div class="note">{t("fetch_fail", names=", ".join(aname(c) for c in miss))}</div>',
                     unsafe_allow_html=True)
+    st.markdown(f'<div class="note" style="margin-top:6px">{t("ov_quad_hint")}</div>',
+                unsafe_allow_html=True)
 
-    st.markdown(f"#### {t('trend_6m')}")
-    pick = st.multiselect(t("pick_assets"), codes,
-                          default=["gold", "spx", "dxy", "vix"],
-                          format_func=aname)
+    st.divider()
+
+    # 时间窗口:两张图共用
+    zh_keys = list(C.OVERVIEW_WINDOWS.keys())
+    idx = zh_keys.index(C.OVERVIEW_DEFAULT_WINDOW) if C.OVERVIEW_DEFAULT_WINDOW in zh_keys else 1
+    wins = C.OVERVIEW_WINDOWS_EN if lang() == "en" else C.OVERVIEW_WINDOWS
+    wkeys = list(wins.keys())
+    wlabel = st.selectbox(t("ov_window"), wkeys, index=min(idx, len(wkeys) - 1))
+    days = wins[wlabel]
+
+    # ── 图一:收益率,画原始 % ──
+    st.markdown(f"#### {t('ov_chart_yield')}")
+    ycodes = [c for c in C.OVERVIEW_YIELD_CHART if c in C.ASSETS]
+    ypick = st.multiselect(t("pick_assets"), ycodes, default=ycodes,
+                           format_func=aname, key="ov_yield_pick")
     fig = go.Figure()
-    for code in pick:
-        s = core.recent(series_cache[code], days=180)
+    for code in ypick:
+        s = core.recent(series_cache.get(code, pd.Series(dtype=float)), days=days)
         if s.empty:
             continue
-        base = s.iloc[0]
-        fig.add_trace(go.Scatter(x=s.index, y=s / base * 100, name=aname(code),
-                                 mode="lines", line=dict(width=2)))
-    st.plotly_chart(style_fig(fig, 360), use_container_width=True)
+        fig.add_trace(go.Scatter(x=s.index, y=s, name=aname(code), mode="lines",
+                                 line=dict(width=2),
+                                 hovertemplate="%{y:.2f}%<extra>" + aname(code) + "</extra>"))
+    fig = style_fig(fig, 340)
+    fig.update_layout(yaxis_title="%")
+    st.plotly_chart(fig, use_container_width=True)
+    st.markdown(f'<div class="note">{t("ov_chart_note")}</div>', unsafe_allow_html=True)
+
+    # ── 图二:价格类,基准化 = 100 ──
+    st.markdown(f"#### {t('ov_chart_price')}")
+    pcodes = [c for c in codes if not C.ASSETS[c].get("is_yield")]
+    default_p = [c for c in C.OVERVIEW_PRICE_CHART if c in pcodes]
+    ppick = st.multiselect(t("pick_assets"), pcodes, default=default_p,
+                           format_func=aname, key="ov_price_pick")
+    fig2 = go.Figure()
+    for code in ppick:
+        s = core.recent(series_cache.get(code, pd.Series(dtype=float)), days=days)
+        if s.empty or s.iloc[0] == 0:
+            continue
+        fig2.add_trace(go.Scatter(x=s.index, y=s / s.iloc[0] * 100, name=aname(code),
+                                  mode="lines", line=dict(width=2),
+                                  hovertemplate="%{y:.1f}<extra>" + aname(code) + "</extra>"))
+    fig2.add_hline(y=100, line=dict(color=T["line"], width=1, dash="dot"))
+    st.plotly_chart(style_fig(fig2, 340), use_container_width=True)
 
 
 # ════════════════════════════════════════════════════════════════════════════
