@@ -362,6 +362,46 @@ def page_curve_history():
                                   [(a, b) for a, b in recessions if b >= cut], 320),
                     use_container_width=True)
 
+    # ── 趋势:最近1年 + 20日均线 ──
+    st.markdown(f"#### {t('ch_trend_title')}")
+    cut1y = pd.Timestamp.today() - pd.DateOffset(years=1)
+    raw = s_2s10s.dropna()
+    ma = raw.rolling(20).mean()
+    raw_1y, ma_1y = raw[raw.index >= cut1y], ma[ma.index >= cut1y].dropna()
+
+    if len(ma_1y) > 25:
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=raw_1y.index, y=raw_1y.values * 100, name=t("ch_trend_raw"),
+            mode="lines", line=dict(width=1, color=T["muted"]),
+            hovertemplate="%{x|%Y-%m-%d} · %{y:.0f} bps<extra></extra>"))
+        fig.add_trace(go.Scatter(
+            x=ma_1y.index, y=ma_1y.values * 100, name=t("ch_trend_ma"),
+            mode="lines", line=dict(width=3, color=T["gold"]),
+            hovertemplate="%{x|%Y-%m-%d} · %{y:.0f} bps<extra></extra>"))
+        fig = style_fig(fig, 320)
+        fig.add_hline(y=0, line=dict(color=T["txt"], width=1, dash="dash"))
+        fig.update_layout(yaxis_title="bps")
+        st.plotly_chart(fig, use_container_width=True)
+
+        # 一句话结论:均线一个月的方向(20 个交易日)
+        now_bp = float(ma_1y.iloc[-1]) * 100
+        then_bp = float(ma_1y.iloc[-21]) * 100 if len(ma_1y) > 21 else float(ma_1y.iloc[0]) * 100
+        chg = now_bp - then_bp
+        if chg < -5:
+            word, col = t("ch_trend_down"), T["down"]
+        elif chg > 5:
+            word, col = t("ch_trend_up"), T["up"]
+        else:
+            word, col = t("ch_trend_flat"), T["muted"]
+        st.markdown(f'{t("ch_trend_verdict")}<span class="pill" style="background:{col};'
+                    f'color:#0a0d17">{word}</span>', unsafe_allow_html=True)
+        st.caption(t("ch_trend_detail", now=f"{now_bp:+.0f}",
+                     then=f"{then_bp:+.0f}", chg=f"{chg:+.0f}"))
+        st.markdown(f'<div class="note">{t("ch_trend_note")}</div>', unsafe_allow_html=True)
+
+    st.divider()
+
     # ── 水平收益率 ──
     st.markdown(f"#### {t('ch_levels')}")
     fig = go.Figure()
