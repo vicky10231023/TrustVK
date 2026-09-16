@@ -117,6 +117,18 @@ CPI_COMPONENTS = {
 }
 CPI_HEADLINE_KEY = "headline"   # 页面底部那张 5 年走势图画的是哪一项
 
+# ── 劳动力市场(周度初请失业金)──────────────────────────────────────────────
+# 为什么用这一条:它是行政数据(真的去申请了失业金),不是调查——没人能拒绝回答,
+# 也几乎不修正。非农那种调查数据回收率在下降,7 月就从 -23k 修到 +21k,差了 44k。
+# 发布:每周四 08:30 美东时间(加州 05:30);节假日那周会提前一天。
+LABOR = {
+    "claims_4wk": "IC4WSA",   # 初请失业金 4 周移动平均(主指标)
+    "claims_raw": "ICSA",     # 单周初请(抖,只做背景)
+    "warn":  260_000,         # 高于这个 = 劳动力市场开始出现裂缝
+    "calm":  220_000,         # 低于这个 = 没有裂缝
+    "years": 10,              # 主图看多久
+}
+
 # ── 事件定义 ─────────────────────────────────────────────────────────────────
 # source: manual=用下面写死的 dates;fred_release=用FRED发布日历;fred_change=FRED中利率变动日
 EVENTS = {
@@ -162,6 +174,7 @@ PAGES = [
     ("市场总览",            "Market Overview",        "overview",   True),
     ("利率与曲线",          "Rates & Curve",          "rates",      True),
     ("曲线历史",            "Curve History",          "curve_hist", True),
+    ("劳动力市场",          "Labor Market",           "labor",      True),
     ("美债实验室",          "Treasury Lab",           "ust",        True),
     ("情绪 / 风险",         "Sentiment / Risk",       "sentiment",  True),
     ("宏观日历 & 事件研究", "Calendar & Event Study", "events",     True),
@@ -246,6 +259,31 @@ TEXT = {
         "ch_trend_flat":   "基本没动",
         "ch_trend_detail": "均线 {now} bps · 一个月前 {then} bps · 变动 {chg} bps",
         "ch_trend_note":   "细的那条是每天的数,抖得看不出方向;粗的那条是 20 日均线,抹掉噪音后才看得出趋势。只看粗线。收窄 = 市场越来越认为政策已经偏紧;走宽 = 市场越来越不这么认为。一周看一次就够,连续四周同方向才算数。",
+        # 劳动力市场
+        "lb_title":        "劳动力市场",
+        "lb_sub":          "初请失业金 4 周移动平均。这是行政数据——真的去申请了失业金,没人能拒绝回答,也几乎不修正。每周四 08:30 美东时间发布(加州 05:30),覆盖的是上上周。",
+        "lb_need_key":     "本页需要免费 FRED key(在 Secrets 设 FRED_API_KEY)。",
+        "lb_card_4wk":     "4 周均值",
+        "lb_card_raw":     "上周单周",
+        "lb_card_1m":      "一个月前",
+        "lb_card_1y":      "一年前",
+        "lb_state_warn":   "出现裂缝",
+        "lb_state_watch":  "需要留意",
+        "lb_state_calm":   "没有裂缝",
+        "lb_latest":       "最新数据覆盖到:{date}",
+        "lb_chart":        "近 {n} 年走势(灰色 = 衰退期)",
+        "lb_line_4wk":     "4 周均值",
+        "lb_line_raw":     "单周",
+        "lb_warn_line":    "{v}k = 裂缝线",
+        "lb_calm_line":    "{v}k = 平静线",
+        "lb_verdict":      "过去一个月方向:",
+        "lb_up":           "在上升",
+        "lb_down":         "在下降",
+        "lb_flat":         "基本没动",
+        "lb_detail":       "现在 {now} · 一个月前 {then} · 变动 {chg}",
+        "lb_note":         "只看 4 周均值那条线,单周那条抖得没法读(天气、假期、一家公司裁员都会让它跳)。一周看一次就够,连续三到四周同方向才算数。突破 {warn}k 才是信号,单周跳一下不是。",
+        "lb_note2":        "这一条告诉你的是「解雇」,不是「招聘」。在低招聘、低解雇的环境里,初请可以一直很低,但就业市场已经在慢慢变差——因为没人被裁,只是也没人被招。所以它是最快的信号,不是唯一的信号。等周四这个习惯稳定了,再加招聘率(JTSHIR,月度)。",
+        "lb_download":     "下载 CSV",
         # 美债实验室
         "ust_title":        "美债实验室",
         "ust_need_key":     "本页需要免费 FRED key(在 Secrets 设 FRED_API_KEY)。",
@@ -428,6 +466,31 @@ TEXT = {
         "ch_trend_flat":   "essentially unchanged",
         "ch_trend_detail": "Average {now} bps · a month ago {then} bps · change {chg} bps",
         "ch_trend_note":   "The thin line is the daily spread — too noisy to read a direction from. The thick line is the 20-day average, which is where the trend shows. Read only the thick line. Narrowing means the market increasingly thinks policy is tight; widening means the opposite. Once a week is enough, and four weeks in the same direction is what counts.",
+        # Labor market
+        "lb_title":        "Labor Market",
+        "lb_sub":          "Initial jobless claims, 4-week average. This is administrative data — people actually filing for benefits, so nobody can decline to answer and it is barely revised. Released Thursdays at 8:30 AM Eastern (5:30 AM in California), covering the week before last.",
+        "lb_need_key":     "This page needs a free FRED key (set FRED_API_KEY in Secrets).",
+        "lb_card_4wk":     "4-week average",
+        "lb_card_raw":     "Latest single week",
+        "lb_card_1m":      "A month ago",
+        "lb_card_1y":      "A year ago",
+        "lb_state_warn":   "Cracks showing",
+        "lb_state_watch":  "Worth watching",
+        "lb_state_calm":   "No cracks",
+        "lb_latest":       "Data through: {date}",
+        "lb_chart":        "Last {n} years (grey = recessions)",
+        "lb_line_4wk":     "4-week average",
+        "lb_line_raw":     "Single week",
+        "lb_warn_line":    "{v}k = crack line",
+        "lb_calm_line":    "{v}k = calm line",
+        "lb_verdict":      "Direction over the past month: ",
+        "lb_up":           "rising",
+        "lb_down":         "falling",
+        "lb_flat":         "essentially unchanged",
+        "lb_detail":       "Now {now} · a month ago {then} · change {chg}",
+        "lb_note":         "Read only the 4-week average; the single-week line is too noisy (weather, holidays and one company's layoffs all make it jump). Once a week is enough, and three or four weeks in the same direction is what counts. Breaking {warn}k is the signal — a one-week jump is not.",
+        "lb_note2":        "This series tells you about firing, not hiring. In a low-hire, low-fire economy claims can stay low while the job market quietly deteriorates, because nobody is being fired — they just aren't being hired either. So it is the fastest signal, not the only one. Once the Thursday habit sticks, add the hiring rate (JTSHIR, monthly).",
+        "lb_download":     "Download CSV",
         # Treasury Lab
         "ust_title":        "Treasury Lab",
         "ust_need_key":     "This page needs a free FRED key (set FRED_API_KEY in Secrets).",

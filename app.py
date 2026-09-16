@@ -425,6 +425,122 @@ def page_curve_history():
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# 页面:劳动力市场(初请失业金 4 周均值)
+# 为什么是这一条:行政数据、周频、几乎不修正。每周四 08:30 美东发布。
+# ════════════════════════════════════════════════════════════════════════════
+def page_labor():
+    st.markdown('<div class="eyebrow">LABOR MARKET</div>', unsafe_allow_html=True)
+    st.markdown(f"## {t('lb_title')}")
+    key = core.fred_key()
+    if not key:
+        st.markdown(f'<div class="note">{t("lb_need_key")}</div>', unsafe_allow_html=True)
+        return
+    st.caption(t("lb_sub"))
+
+    L = C.LABOR
+    try:
+        s4 = yc_fetch(L["claims_4wk"], key, start="1970-01-01").dropna()
+        s1 = yc_fetch(L["claims_raw"], key, start="1970-01-01").dropna()
+        recessions = yc_recessions(key, start="1970-01-01")
+    except Exception:
+        st.markdown(f'<div class="note">{t("fetch_fail", names="FRED")}</div>', unsafe_allow_html=True)
+        return
+
+    if s4.empty:
+        st.markdown(f'<div class="note">{t("fetch_fail", names=L["claims_4wk"])}</div>',
+                    unsafe_allow_html=True)
+        return
+
+    def _k(v):
+        return f"{v / 1000:,.0f}k"
+
+    now = float(s4.iloc[-1])
+    d_last = s4.index[-1]
+
+    def _asof(days):
+        w = s4[s4.index <= d_last - pd.Timedelta(days=days)]
+        return float(w.iloc[-1]) if len(w) else None
+
+    m1, y1 = _asof(30), _asof(365)
+
+    # 状态:裂缝 / 留意 / 平静
+    if now >= L["warn"]:
+        state, color = t("lb_state_warn"), T["down"]
+    elif now >= L["calm"]:
+        state, color = t("lb_state_watch"), T["gold"]
+    else:
+        state, color = t("lb_state_calm"), T["up"]
+
+    items = [(t("lb_card_4wk"), _k(now), state, color)]
+    if not s1.empty:
+        items.append((t("lb_card_raw"), _k(float(s1.iloc[-1])), None, T["muted"]))
+    if m1 is not None:
+        items.append((t("lb_card_1m"), _k(m1), f"{(now - m1) / 1000:+,.0f}k", T["muted"]))
+    if y1 is not None:
+        items.append((t("lb_card_1y"), _k(y1), f"{(now - y1) / 1000:+,.0f}k", T["muted"]))
+    core.cards_row(items)
+
+    st.markdown(f'<span class="pill" style="background:{color};color:#0a0d17">{state}</span>',
+                unsafe_allow_html=True)
+    st.caption(t("lb_latest", date=d_last.date()))
+
+    st.divider()
+
+    # ── 主图 ──
+    cut = pd.Timestamp.today() - pd.DateOffset(years=L["years"])
+    a4, a1 = s4[s4.index >= cut], s1[s1.index >= cut]
+    st.markdown(f"#### {t('lb_chart', n=L['years'])}")
+    fig = go.Figure()
+    if not a1.empty:
+        fig.add_trace(go.Scatter(x=a1.index, y=a1.values, name=t("lb_line_raw"),
+                                 mode="lines", line=dict(width=1, color=T["muted"]),
+                                 hovertemplate="%{x|%Y-%m-%d} · %{y:,.0f}<extra></extra>"))
+    fig.add_trace(go.Scatter(x=a4.index, y=a4.values, name=t("lb_line_4wk"),
+                             mode="lines", line=dict(width=3, color=T["gold"]),
+                             hovertemplate="%{x|%Y-%m-%d} · %{y:,.0f}<extra></extra>"))
+    for start, end in recessions:
+        if end >= cut:
+            fig.add_vrect(x0=max(start, cut), x1=end, fillcolor=T["muted"],
+                          opacity=0.16, line_width=0, layer="below")
+    fig = style_fig(fig, 380)
+    fig.add_hline(y=L["warn"], line=dict(color=T["down"], width=1, dash="dot"),
+                  annotation_text=t("lb_warn_line", v=int(L["warn"] / 1000)),
+                  annotation_position="top left",
+                  annotation_font=dict(color=T["down"], size=10))
+    fig.add_hline(y=L["calm"], line=dict(color=T["up"], width=1, dash="dot"),
+                  annotation_text=t("lb_calm_line", v=int(L["calm"] / 1000)),
+                  annotation_position="bottom left",
+                  annotation_font=dict(color=T["up"], size=10))
+    # 2020 年那个 600 万的尖峰会把近年的变化压成一条平线,所以纵轴截断
+    ymax = float(a4.max()) * 1.35
+    fig.update_layout(yaxis_title="", yaxis=dict(range=[0, min(ymax, 700_000)],
+                                                 gridcolor=T["line"], zeroline=False))
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ── 一句话结论 ──
+    if m1 is not None:
+        chg = now - m1
+        if chg > 5_000:
+            word, col = t("lb_up"), T["down"]
+        elif chg < -5_000:
+            word, col = t("lb_down"), T["up"]
+        else:
+            word, col = t("lb_flat"), T["muted"]
+        st.markdown(f'{t("lb_verdict")}<span class="pill" style="background:{col};'
+                    f'color:#0a0d17">{word}</span>', unsafe_allow_html=True)
+        st.caption(t("lb_detail", now=_k(now), then=_k(m1), chg=f"{chg / 1000:+,.0f}k"))
+
+    st.markdown(f'<div class="note">{t("lb_note", warn=int(L["warn"] / 1000))}</div>',
+                unsafe_allow_html=True)
+    st.markdown(f'<div class="note" style="margin-top:10px">{t("lb_note2")}</div>',
+                unsafe_allow_html=True)
+
+    out = pd.DataFrame({L["claims_4wk"]: s4, L["claims_raw"]: s1}).dropna(how="all")
+    st.download_button(t("lb_download"), out.to_csv().encode("utf-8"),
+                       file_name=f"jobless_claims_{dt.date.today():%Y%m%d}.csv", mime="text/csv")
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # 页面:美债实验室(对应《美债研究手册》第一 ~ 第四层)
 # ════════════════════════════════════════════════════════════════════════════
 def _ust_pick_window():
@@ -853,7 +969,7 @@ def page_placeholder(title, desc):
 
 PAGE_FUNCS = {
     "overview": page_overview, "rates": page_rates, "curve_hist": page_curve_history,
-    "ust": page_ust, "sentiment": page_sentiment,
+    "labor": page_labor, "ust": page_ust, "sentiment": page_sentiment,
     "events": page_events, "cpi": page_cpi,
     "portfolio": lambda: page_placeholder(t("portfolio_title"), t("portfolio_desc")),
     "brief": lambda: page_placeholder(t("brief_title"), t("brief_desc")),
