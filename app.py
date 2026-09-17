@@ -164,6 +164,25 @@ def _desk_infl():
     return float(ann.iloc[-1]), n
 
 
+# 新旧 pandas 对月末别名的写法不一样("M" vs "ME"),按月份分组就都不用管了
+def _to_monthly(obj):
+    """把日频/周频序列或表压成每月最后一个读数,索引仍是时间戳。"""
+    if obj.empty:
+        return obj
+    out = obj.groupby(obj.index.to_period("M")).last()
+    out.index = out.index.to_timestamp(how="end").normalize()
+    return out
+
+
+# 这一页需要 config.DESK 里的这些键;缺了说明 config.py 没跟着一起上传
+DESK_REQUIRED = ["infl_calm", "infl_warn", "growth_calm", "growth_warn",
+                 "infl_months", "traj_months", "infl_series", "growth_series"]
+
+
+def _desk_missing_keys():
+    return [k for k in DESK_REQUIRED if k not in C.DESK]
+
+
 def _desk_infl_monthly():
     """通胀轴:核心PCE 3个月年化的完整月度序列(轨迹图和当前值都用它)。"""
     idx = core.fred_series(C.DESK["infl_series"], start="2015-01-01").dropna()
@@ -177,7 +196,7 @@ def _desk_growth_monthly():
     s = core.fred_series(C.DESK["growth_series"], start="2015-01-01").dropna()
     if s.empty:
         return s
-    return s.resample("ME").last().dropna()
+    return _to_monthly(s)
 
 
 def _desk_cell(infl_v, gro_v):
@@ -200,7 +219,7 @@ def _desk_cell_history(infl_s, gro_s):
     if infl_s.empty or gro_s.empty:
         return pd.DataFrame()
     df = pd.concat({"infl": infl_s, "gro": gro_s}, axis=1)
-    df = df.resample("ME").last().dropna()
+    df = _to_monthly(df).dropna()
     if df.empty:
         return df
     df["cell"] = [_desk_cell(r.infl, r.gro) for r in df.itertuples()]
@@ -311,6 +330,12 @@ def page_desk():
         st.markdown(f'<div class="note">{t("dk_need_key")}</div>', unsafe_allow_html=True)
         return
     st.caption(t("dk_sub"))
+
+    missing = _desk_missing_keys()
+    if missing:
+        st.markdown(f'<div class="note">{t("dk_cfg_stale", keys=", ".join(missing))}</div>',
+                    unsafe_allow_html=True)
+        return
 
     D = C.DESK
     today = dt.date.today()
