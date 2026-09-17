@@ -138,10 +138,14 @@ DESK = {
 
     # ① 横向:两个轴的判定标准。阈值事先写死,不能事后调来迎合想要的结论。
     "infl_series":  "PCEPILFE",   # 核心PCE价格指数(月度),用它算3个月年化
-    "infl_months":  3,            # 连续下行几个月才算"降"
+    "infl_months":  3,            # 换格之后要连续几个月才算确认
+    # 通胀轴改成和增长轴同一种口径:数字 + 两条线(原先用"连续下行几个月"的方向口径)
+    "infl_calm":    2.5,          # 低于 = 温和(分界线,决定在哪一格)
+    "infl_warn":    3.5,          # 高于 = 深入过热区(裂缝线,只做距离参考)
     "growth_series": "IC4WSA",    # 初请失业金4周均值
-    "growth_calm":  220_000,      # 低于 = 强
-    "growth_warn":  260_000,      # 高于并维持一个月 = 弱
+    "growth_calm":  220_000,      # 低于 = 强(分界线)
+    "growth_warn":  260_000,      # 高于 = 深入衰退区(裂缝线)
+    "traj_months":  12,           # 四象限图上回看几个月的轨迹
 
     # ③ 门槛:三个条件,有几个就是几档
     "gates": ["direction", "catalyst", "date"],
@@ -329,16 +333,22 @@ TEXT = {
         "dk_box_trans":    "过渡区 · 不判格",
         "dk_box_now":      "当前:",
         "dk_my_view":      "我的判断:③ 过度收紧 · 市场定价:② 过热 · 我是少数派",
-        "dk_infl_detail":  "核心PCE 3个月年化 {v}% · 连续下行 {n} 个月(需要 {need} 个月)",
+        "dk_grid_title":   "四象限位置",
+        "dk_axis_x":       "通胀 · 核心PCE 3个月年化 (%)",
+        "dk_axis_y":       "增长 · 初请4周均值(越往上越强)",
+        "dk_held":         "已在这一格 {n} 个月",
+        "dk_pending":      "待确认 · 还需 {n} 个月",
+        "dk_traj_note":    "灰点是过去 {n} 个月,亮点是现在。实线=分界线(决定在哪一格),虚线=裂缝线(只做距离参考)。",
+        "dk_infl_detail":  "核心PCE 3个月年化 {v}% · 分界线 {calm}% · 裂缝线 {warn}%",
         "dk_growth_detail": "初请4周均值 {v} · 平静线 {calm} · 裂缝线 {warn}",
         "dk_trans_note":   "够不到标准就是过渡区,不硬塞进某一格。过渡区里什么都不做,只记录。",
         # ② 纵向
         "dk_v_title":      "② 纵向 · 离开这一格还差多少",
         "dk_v_to3":        "→ ③ 过度收紧",
         "dk_v_to1":        "→ ① 软着陆",
-        "dk_v_gap_claims": "初请还差 {v} 才到 260k",
+        "dk_v_gap_claims": "初请距离分界线还差 {v}",
         "dk_v_gap_claims_over": "初请已破 260k,还需维持 {d} 天",
-        "dk_v_gap_infl":   "核心PCE 还需再下行 {n} 个月",
+        "dk_v_gap_infl":   "核心PCE 距离分界线还差 {v} 个百分点",
         "dk_v_next":       "下一个预定复盘日:{date}(还有 {n} 天)",
         "dk_v_none":       "没有更多预定复盘日,去 config.py 的 DESK[\"review_dates\"] 里加。",
         # ③ 门槛
@@ -603,16 +613,22 @@ TEXT = {
         "dk_box_trans":    "Transition · no box call",
         "dk_box_now":      "Now: ",
         "dk_my_view":      "My view: ③ over-tightening · market pricing: ② overheat · I am in the minority",
-        "dk_infl_detail":  "Core PCE 3m annualized {v}% · falling for {n} months (needs {need})",
+        "dk_grid_title":   "Position on the grid",
+        "dk_axis_x":       "Inflation · core PCE 3m annualized (%)",
+        "dk_axis_y":       "Growth · initial claims 4wk avg (up = stronger)",
+        "dk_held":         "In this cell for {n} months",
+        "dk_pending":      "Unconfirmed · {n} more months needed",
+        "dk_traj_note":    "Grey dots are the past {n} months, the bright one is now. Solid lines divide the cells; dashed lines mark the deeper zone.",
+        "dk_infl_detail":  "Core PCE 3m annualized {v}% · divider {calm}% · deep line {warn}%",
         "dk_growth_detail": "Claims 4-week average {v} · calm line {calm} · crack line {warn}",
         "dk_trans_note":   "If it does not clear the threshold it is transition, not a box. In transition you record and do nothing.",
         # Layer 2
         "dk_v_title":      "② Vertical · how far from leaving this box",
         "dk_v_to3":        "→ ③ over-tightening",
         "dk_v_to1":        "→ ① soft landing",
-        "dk_v_gap_claims": "Claims are {v} below 260k",
+        "dk_v_gap_claims": "Claims are {v} from the divider",
         "dk_v_gap_claims_over": "Claims are above 260k; {d} more days to hold",
-        "dk_v_gap_infl":   "Core PCE needs {n} more months of falling",
+        "dk_v_gap_infl":   "Core PCE is {v} pp from the divider",
         "dk_v_next":       "Next scheduled review: {date} ({n} days away)",
         "dk_v_none":       "No scheduled reviews left — add more in DESK[\"review_dates\"] in config.py.",
         # Layer 3

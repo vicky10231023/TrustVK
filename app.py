@@ -164,6 +164,120 @@ def _desk_infl():
     return float(ann.iloc[-1]), n
 
 
+def _desk_infl_monthly():
+    """通胀轴:核心PCE 3个月年化的完整月度序列(轨迹图和当前值都用它)。"""
+    idx = core.fred_series(C.DESK["infl_series"], start="2015-01-01").dropna()
+    if len(idx) < 8:
+        return pd.Series(dtype=float)
+    return (((idx / idx.shift(3)) ** 4 - 1) * 100).dropna()
+
+
+def _desk_growth_monthly():
+    """增长轴:初请4周均值,取每月最后一个读数,和通胀轴对齐成月度。"""
+    s = core.fred_series(C.DESK["growth_series"], start="2015-01-01").dropna()
+    if s.empty:
+        return s
+    return s.resample("ME").last().dropna()
+
+
+def _desk_cell(infl_v, gro_v):
+    """按水平判格:各轴一条分界线。返回 dk_box1..4 的 key,数据缺失返回 None。"""
+    if infl_v is None or gro_v is None:
+        return None
+    hot = infl_v >= C.DESK["infl_calm"]
+    weak = gro_v >= C.DESK["growth_calm"]
+    if not hot and not weak:
+        return "dk_box1"   # 软着陆
+    if hot and not weak:
+        return "dk_box2"   # 过热
+    if not hot and weak:
+        return "dk_box3"   # 过度收紧
+    return "dk_box4"       # 滞胀
+
+
+def _desk_cell_history(infl_s, gro_s):
+    """把两条月度序列对齐,逐月算出所在格子。返回 DataFrame(infl/gro/cell)。"""
+    if infl_s.empty or gro_s.empty:
+        return pd.DataFrame()
+    df = pd.concat({"infl": infl_s, "gro": gro_s}, axis=1)
+    df = df.resample("ME").last().dropna()
+    if df.empty:
+        return df
+    df["cell"] = [_desk_cell(r.infl, r.gro) for r in df.itertuples()]
+    return df
+
+
+def _desk_held_months(df):
+    """当前格子已经连续保持了几个月。"""
+    if df.empty:
+        return 0
+    cells = list(df["cell"])
+    now, n = cells[-1], 0
+    for c in reversed(cells):
+        if c == now:
+            n += 1
+        else:
+            break
+    return n
+
+
+def _desk_grid_fig(df, months, height=420):
+    """四象限图:两条分界线切出四格,点是每个月的位置,最新一点高亮。
+    纵轴是初请(数字越小增长越强),所以反转,让"强"在上面。"""
+    D = C.DESK
+    tail = df.tail(months)
+    fig = go.Figure()
+
+    x_lo = min(tail["infl"].min(), D["infl_calm"]) - 0.6
+    x_hi = max(tail["infl"].max(), D["infl_warn"]) + 0.4
+    y_lo = min(tail["gro"].min(), D["growth_calm"]) - 25_000
+    y_hi = max(tail["gro"].max(), D["growth_warn"]) + 25_000
+
+    # 四格底色:分界线切开(纵轴已反转,所以"上=强"对应 claims 小)
+    for x0, x1, y0, y1, col in [
+        (x_lo, D["infl_calm"], y_lo, D["growth_calm"], T["up"]),      # ① 软着陆
+        (D["infl_calm"], x_hi, y_lo, D["growth_calm"], T["gold"]),    # ② 过热
+        (x_lo, D["infl_calm"], D["growth_calm"], y_hi, T["accent"]),  # ③ 过度收紧
+        (D["infl_calm"], x_hi, D["growth_calm"], y_hi, T["down"]),    # ④ 滞胀
+    ]:
+        fig.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1,
+                      fillcolor=col, opacity=0.07, line_width=0, layer="below")
+
+    # 分界线(实) / 裂缝线(虚)
+    fig.add_vline(x=D["infl_calm"], line=dict(color=T["line"], width=1.5))
+    fig.add_hline(y=D["growth_calm"], line=dict(color=T["line"], width=1.5))
+    fig.add_vline(x=D["infl_warn"], line=dict(color=T["muted"], width=1, dash="dot"))
+    fig.add_hline(y=D["growth_warn"], line=dict(color=T["muted"], width=1, dash="dot"))
+
+    # 四个格子的名字,放在各自区域的角上
+    for x, y, key, anchor in [
+        (x_lo, y_lo, "dk_box1", "left"), (x_hi, y_lo, "dk_box2", "right"),
+        (x_lo, y_hi, "dk_box3", "left"), (x_hi, y_hi, "dk_box4", "right"),
+    ]:
+        fig.add_annotation(x=x, y=y, text=t(key), showarrow=False,
+                           xanchor=anchor, yanchor="top" if y == y_lo else "bottom",
+                           font=dict(color=T["muted"], size=11))
+
+    # 轨迹
+    fig.add_trace(go.Scatter(
+        x=tail["infl"], y=tail["gro"], mode="lines+markers",
+        line=dict(color=T["muted"], width=1.2),
+        marker=dict(size=6, color=T["muted"], opacity=.6),
+        hovertemplate="%{x:.2f}% · %{y:,.0f}<extra>%{text}</extra>",
+        text=[d.strftime("%Y-%m") for d in tail.index]))
+    last = tail.iloc[-1]
+    fig.add_trace(go.Scatter(
+        x=[last["infl"]], y=[last["gro"]], mode="markers",
+        marker=dict(size=15, color=T["gold"], line=dict(color=T["txt"], width=1.5)),
+        hovertemplate="%{x:.2f}% · %{y:,.0f}<extra>" + tail.index[-1].strftime("%Y-%m") + "</extra>"))
+
+    fig = style_fig(fig, height)
+    fig.update_layout(showlegend=False, xaxis_title=t("dk_axis_x"), yaxis_title=t("dk_axis_y"))
+    fig.update_xaxes(range=[x_lo, x_hi])
+    fig.update_yaxes(range=[y_hi, y_lo])   # 反转:初请小(增长强)在上面
+    return fig
+
+
 def _desk_growth():
     """增长轴:初请4周均值。返回 (最新值, 已在260k上方的天数)。"""
     s = core.fred_series(C.DESK["growth_series"], start="2000-01-01").dropna()
@@ -206,53 +320,66 @@ def page_desk():
     infl_v, infl_n = _desk_infl()
     gro_v, gro_days = _desk_growth()
 
-    # 通胀轴判定
+    # 两个轴现在是同一种口径:数字 + 分界线。方向不再决定格子,由轨迹去表达。
+    infl_s = _desk_infl_monthly()
+    gro_s = _desk_growth_monthly()
+    hist = _desk_cell_history(infl_s, gro_s)
+
+    if not hist.empty:
+        infl_v = float(hist["infl"].iloc[-1])
+        gro_v = float(hist["gro"].iloc[-1])
+
     if infl_v is None:
         infl_state, infl_col = t("dk_mid"), T["muted"]
-    elif infl_n >= D["infl_months"]:
+    elif infl_v < D["infl_calm"]:
         infl_state, infl_col = t("dk_infl_fall"), T["up"]
     else:
         infl_state, infl_col = t("dk_infl_persist"), T["down"]
 
-    # 增长轴判定:破 260k 且维持一个月才算"弱"
     if gro_v is None:
         gro_state, gro_col = t("dk_mid"), T["muted"]
-    elif gro_v >= D["growth_warn"] and gro_days >= 30:
-        gro_state, gro_col = t("dk_growth_weak"), T["down"]
     elif gro_v < D["growth_calm"]:
         gro_state, gro_col = t("dk_growth_hold"), T["up"]
     else:
-        gro_state, gro_col = t("dk_mid"), T["gold"]
+        gro_state, gro_col = t("dk_growth_weak"), T["down"]
 
     core.cards_row([
         (t("dk_axis_infl"), f"{infl_v:.1f}%" if infl_v is not None else "—", infl_state, infl_col),
         (t("dk_axis_growth"), f"{gro_v:,.0f}" if gro_v is not None else "—", gro_state, gro_col),
     ])
     if infl_v is not None:
-        st.caption(t("dk_infl_detail", v=f"{infl_v:.1f}", n=infl_n, need=D["infl_months"]))
+        st.caption(t("dk_infl_detail", v=f"{infl_v:.1f}",
+                     calm=f"{D['infl_calm']:.1f}", warn=f"{D['infl_warn']:.1f}"))
     if gro_v is not None:
         st.caption(t("dk_growth_detail", v=f"{gro_v:,.0f}",
                      calm=f"{D['growth_calm']:,}", warn=f"{D['growth_warn']:,}"))
 
-    # 格子:任一轴在中间地带 → 过渡区,不硬判
-    mid = t("dk_mid")
-    if infl_state == mid or gro_state == mid:
+    cell = hist["cell"].iloc[-1] if not hist.empty else None
+    if cell is None:
         box, box_col = t("dk_box_trans"), T["muted"]
-    elif infl_state == t("dk_infl_fall") and gro_state == t("dk_growth_hold"):
-        box, box_col = t("dk_box1"), T["up"]
-    elif infl_state == t("dk_infl_persist") and gro_state == t("dk_growth_hold"):
-        box, box_col = t("dk_box2"), T["gold"]
-    elif infl_state == t("dk_infl_fall") and gro_state == t("dk_growth_weak"):
-        box, box_col = t("dk_box3"), T["accent"]
     else:
-        box, box_col = t("dk_box4"), T["down"]
-
+        box = t(cell)
+        box_col = {"dk_box1": T["up"], "dk_box2": T["gold"],
+                   "dk_box3": T["accent"], "dk_box4": T["down"]}[cell]
     st.markdown(f'{t("dk_box_now")}<span class="pill" style="background:{box_col};'
                 f'color:#0a0d17">{box}</span>', unsafe_allow_html=True)
+
+    # 换格之后要连续几个月才算确认,免得被单月数据带着跑
+    held = _desk_held_months(hist)
+    if cell is not None:
+        if held >= D["infl_months"]:
+            st.caption(t("dk_held", n=held))
+        else:
+            st.caption(t("dk_pending", n=D["infl_months"] - held))
+
+    # ══ 四象限图 ══
+    if len(hist) >= 3:
+        st.markdown(f"#### {t('dk_grid_title')}")
+        st.plotly_chart(_desk_grid_fig(hist, D["traj_months"]), use_container_width=True)
+        st.caption(t("dk_traj_note", n=min(D["traj_months"], len(hist))))
+
     st.markdown(f'<div class="note" style="margin-top:8px">{t("dk_my_view")}</div>',
                 unsafe_allow_html=True)
-    if box == t("dk_box_trans"):
-        st.markdown(f'<div class="note">{t("dk_trans_note")}</div>', unsafe_allow_html=True)
 
     st.divider()
 
@@ -262,13 +389,11 @@ def page_desk():
     with c1:
         st.markdown(f"**{t('dk_v_to3')}**")
         if gro_v is not None:
-            if gro_v < D["growth_warn"]:
-                st.caption(t("dk_v_gap_claims", v=f"{D['growth_warn'] - gro_v:,.0f}"))
-            else:
-                st.caption(t("dk_v_gap_claims_over", d=max(0, 30 - gro_days)))
+            st.caption(t("dk_v_gap_claims", v=f"{abs(D['growth_calm'] - gro_v):,.0f}"))
     with c2:
         st.markdown(f"**{t('dk_v_to1')}**")
-        st.caption(t("dk_v_gap_infl", n=max(0, D["infl_months"] - infl_n)))
+        if infl_v is not None:
+            st.caption(t("dk_v_gap_infl", v=f"{abs(infl_v - D['infl_calm']):.1f}"))
 
     future = [dt.date.fromisoformat(d) for d in D["review_dates"]
               if dt.date.fromisoformat(d) >= today]
