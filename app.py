@@ -269,12 +269,14 @@ def _desk_grid_fig(df, months, height=420):
     fig.add_hline(y=D["growth_warn"], line=dict(color=T["muted"], width=1, dash="dot"))
 
     # 四个格子的名字,放在各自区域的角上
+    # 往里收一点:贴角放会被 plotly 右上角的工具栏盖住
+    dx, dy = (x_hi - x_lo) * 0.02, (y_hi - y_lo) * 0.06
     for x, y, key, anchor in [
-        (x_lo, y_lo, "dk_box1", "left"), (x_hi, y_lo, "dk_box2", "right"),
-        (x_lo, y_hi, "dk_box3", "left"), (x_hi, y_hi, "dk_box4", "right"),
+        (x_lo + dx, y_lo + dy, "dk_box1", "left"), (x_hi - dx, y_lo + dy, "dk_box2", "right"),
+        (x_lo + dx, y_hi - dy, "dk_box3", "left"), (x_hi - dx, y_hi - dy, "dk_box4", "right"),
     ]:
         fig.add_annotation(x=x, y=y, text=t(key), showarrow=False,
-                           xanchor=anchor, yanchor="top" if y == y_lo else "bottom",
+                           xanchor=anchor, yanchor="middle",
                            font=dict(color=T["muted"], size=11))
 
     # 轨迹
@@ -400,8 +402,13 @@ def page_desk():
     # ══ 四象限图 ══
     if len(hist) >= 3:
         st.markdown(f"#### {t('dk_grid_title')}")
-        st.plotly_chart(_desk_grid_fig(hist, D["traj_months"]), use_container_width=True)
+        st.plotly_chart(_desk_grid_fig(hist, D["traj_months"]),
+                        use_container_width=True, config={"displayModeBar": False})
         st.caption(t("dk_traj_note", n=min(D["traj_months"], len(hist))))
+        # "现在"这个点其实是两条序列都有数的最后一个月——核心PCE 发布晚,会把它拖后
+        st.caption(t("dk_asof", month=hist.index[-1].strftime("%Y-%m"),
+                     lag=(dt.date.today().year - hist.index[-1].year) * 12
+                         + dt.date.today().month - hist.index[-1].month))
 
     st.markdown(f'<div class="note" style="margin-top:8px">{t("dk_my_view")}</div>',
                 unsafe_allow_html=True)
