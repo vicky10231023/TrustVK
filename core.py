@@ -102,6 +102,25 @@ def fred_release_dates(release_id: int, start: str = "2015-01-01"):
         return []
 
 
+@st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
+def fred_recessions(start: str = "1976-01-01"):
+    """NBER 衰退区间 [(开始, 结束), ...],用于图上的灰色阴影。
+    (原先在 yield_curve.py 里,那个版本自己重写了一遍取数逻辑;这里直接复用 fred_series。)"""
+    usrec = fred_series("USREC", start)
+    if usrec.empty:
+        return []
+    periods, in_rec, rec_start = [], False, None
+    for date, val in usrec.items():
+        if val == 1 and not in_rec:
+            in_rec, rec_start = True, date
+        elif val == 0 and in_rec:
+            in_rec = False
+            periods.append((rec_start, date))
+    if in_rec:
+        periods.append((rec_start, usrec.index[-1]))
+    return periods
+
+
 # ── TreasuryDirect 拍卖 ──────────────────────────────────────────────────────
 def _f(x):
     """能转成 float 就转,不能就返回 None(TreasuryDirect 的字段经常是空字符串)。"""

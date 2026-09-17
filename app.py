@@ -15,7 +15,6 @@ import plotly.graph_objects as go
 import config as C
 import core
 import events as E
-from yield_curve import fetch_fred as yc_fetch, fetch_recessions as yc_recessions
 
 st.set_page_config(page_title="宏观作战室 · Macro War Room", page_icon="🧭", layout="wide")
 core.inject_css()
@@ -165,9 +164,9 @@ def _desk_infl():
     return float(ann.iloc[-1]), n
 
 
-def _desk_growth(key):
+def _desk_growth():
     """增长轴:初请4周均值。返回 (最新值, 已在260k上方的天数)。"""
-    s = yc_fetch(C.DESK["growth_series"], key, start="2000-01-01").dropna()
+    s = core.fred_series(C.DESK["growth_series"], start="2000-01-01").dropna()
     if s.empty:
         return None, 0
     warn = C.DESK["growth_warn"]
@@ -205,7 +204,7 @@ def page_desk():
     # ══ ① 横向 ══
     st.markdown(f"### {t('dk_h_title')}")
     infl_v, infl_n = _desk_infl()
-    gro_v, gro_days = _desk_growth(key)
+    gro_v, gro_days = _desk_growth()
 
     # 通胀轴判定
     if infl_v is None:
@@ -544,11 +543,11 @@ def page_curve_history():
     st.caption(t("ch_sub"))
 
     try:
-        s_2s10s = yc_fetch("T10Y2Y", key)
-        s_3m10s = yc_fetch("T10Y3M", key)
-        s_2y = yc_fetch("DGS2", key)
-        s_10y = yc_fetch("DGS10", key)
-        recessions = yc_recessions(key)
+        s_2s10s = core.fred_series("T10Y2Y", start="1976-01-01")
+        s_3m10s = core.fred_series("T10Y3M", start="1976-01-01")
+        s_2y = core.fred_series("DGS2", start="1976-01-01")
+        s_10y = core.fred_series("DGS10", start="1976-01-01")
+        recessions = core.fred_recessions()
     except Exception:
         st.markdown(f'<div class="note">{t("fetch_fail", names="FRED")}</div>', unsafe_allow_html=True)
         return
@@ -679,9 +678,9 @@ def page_labor():
 
     L = C.LABOR
     try:
-        s4 = yc_fetch(L["claims_4wk"], key, start="1970-01-01").dropna()
-        s1 = yc_fetch(L["claims_raw"], key, start="1970-01-01").dropna()
-        recessions = yc_recessions(key, start="1970-01-01")
+        s4 = core.fred_series(L["claims_4wk"], start="1970-01-01").dropna()
+        s1 = core.fred_series(L["claims_raw"], start="1970-01-01").dropna()
+        recessions = core.fred_recessions(start="1970-01-01")
     except Exception:
         st.markdown(f'<div class="note">{t("fetch_fail", names="FRED")}</div>', unsafe_allow_html=True)
         return
